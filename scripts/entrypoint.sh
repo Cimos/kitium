@@ -28,10 +28,17 @@ fail() { printf '\033[1;31m[kitium]\033[0m %s\n' "$*" >&2; exit 1; }
 # convert.sh writes one <board>.kicad_pcb per Altium .PcbDoc under BUILD_DIR
 # and prints the resulting board paths, one per line.
 log "Locating and converting Altium boards..."
-mapfile -t BOARDS < <(
-  PROJECT="${PROJECT}" BOARDS_GLOB="${BOARDS_GLOB}" BUILD_DIR="${BUILD_DIR}" \
-    "${SCRIPTS}/convert.sh"
-)
+# Capture convert.sh's REAL exit code via a temp file — a command in process
+# substitution `< <(...)` hides its status from set -e/mapfile, which would let a
+# board that failed AFTER earlier boards succeeded slip through the gate silently.
+boards_list="${OUT_DIR}/.boards"
+set +e
+PROJECT="${PROJECT}" BOARDS_GLOB="${BOARDS_GLOB}" BUILD_DIR="${BUILD_DIR}" \
+  "${SCRIPTS}/convert.sh" > "${boards_list}"
+conv_rc=$?
+set -e
+[ "${conv_rc}" -eq 0 ] || fail "Conversion failed (rc=${conv_rc}) — bad/LFS-pointer board or kicad-cli import error (see log above)."
+mapfile -t BOARDS < "${boards_list}"
 [ "${#BOARDS[@]}" -gt 0 ] || fail "No boards were converted — check 'project'/'boards_glob' inputs."
 log "Converted ${#BOARDS[@]} board(s)."
 
@@ -49,10 +56,17 @@ preflight_failed=0
 # --- 3+4. Per-board outputs + checks ---------------------------------------
 for board in "${BOARDS[@]}"; do
   name="$(basename "${board}" .kicad_pcb)"
-  bdir="$(dirname "${board}")"
+  bdir="$(dirname "${board}")"   # per-board dir created by convert.sh
+  [ -d "${bdir}" ] || fail "internal: expected per-board directory ${bdir}"
 
-  # Altium imports zones UNFILLED — refill before any DRC/plot/render.
-  python3 "${SCRIPTS}/refill_zones.py" "${board}" 2>&1 | tee -a "${bdir}/kibot.log" || true
+  # Altium imports zones UNFILLED — refill before any DRC/plot/render. Capture the
+  # python rc via PIPESTATUS (tee would otherwise mask it) and warn loudly: silent
+  # refill failure means wrong gerbers/DRC, the exact trap we're guarding against.
+  set +e
+  python3 "${SCRIPTS}/refill_zones.py" "${board}" 2>&1 | tee -a "${bdir}/kibot.log"
+  rfc=${PIPESTATUS[0]}
+  set -e
+  [ "${rfc}" -eq 0 ] || warn "zone refill FAILED for ${name} (rc=${rfc}) — DRC/gerbers/renders may be wrong"
 
   # Pre-flight guard: empty board / all-UNK refs are silent-import traps. Fail loud.
   log "Inspecting ${name}"
@@ -68,10 +82,11 @@ for board in "${BOARDS[@]}"; do
   fi
 
   log "Running KiBot outputs for board: ${name}"
-  # KiBot generates gerbers, renders, board-BOM, diff, and runs DRC.
-  # --board-only because we have no schematic (no headless sch import).
+  # KiBot generates gerbers, drill, position, PDF, 3D render and runs DRC. No
+  # schematic flag: there's no headless .SchDoc import and the config has no
+  # schematic-dependent outputs (BOM is derived from the board by pcb_bom.py below).
   set +e
-  kibot -c "${KIBOT_CFG}" -b "${board}" -d "${bdir}/out" --board-only 2>&1 | tee -a "${bdir}/kibot.log"
+  kibot -c "${KIBOT_CFG}" -b "${board}" -d "${bdir}/out" 2>&1 | tee -a "${bdir}/kibot.log"
   kibot_rc=${PIPESTATUS[0]}
   set -e
   [ "${kibot_rc}" -eq 0 ] || { warn "KiBot reported issues for ${name} (rc=${kibot_rc}) — see kibot.log"; drc_failed=1; }
@@ -80,22 +95,30 @@ for board in "${BOARDS[@]}"; do
     echo "## Board: \`${name}\`"
     echo
     echo "- Artifacts: \`${bdir}/out\`"
-    [ -f "${bdir}/metrics.json" ] && echo "- Metrics: \`$(tr -d '\n ' < "${bdir}/metrics.json")\`"
+    if [ -f "${bdir}/metrics.json" ]; then
+      echo "<details><summary>Metrics</summary>"
+      echo
+      echo '```json'
+      cat "${bdir}/metrics.json"
+      echo '```'
+      echo "</details>"
+    fi
     echo
   } >> "${REPORT}"
 
-  # BOM cross-check vs Altium's exported BOM (Altium remains the BOM authority).
+  # Derive the board BOM ourselves — KiBot's bom output is schematic-only and a
+  # board-only import has no schematic. Then cross-check vs Altium's exported BOM
+  # (Altium stays the BOM authority for MPN/supplier data).
   if [ -n "${BOM_CSV}" ]; then
-    kicad_bom="$(find "${bdir}/out" -name '*bom*.csv' | head -n1 || true)"
-    if [ -n "${kicad_bom}" ]; then
+    kicad_bom="${bdir}/board-bom.csv"
+    python3 "${SCRIPTS}/pcb_bom.py" "${board}" --out "${kicad_bom}" || true
+    if [ -f "${kicad_bom}" ]; then
       log "Cross-checking BOM for ${name} against ${BOM_CSV}"
       python3 "${SCRIPTS}/bom_crosscheck.py" \
         --kicad-bom "${kicad_bom}" \
         --altium-bom "${BOM_CSV}" \
         --out "${bdir}/bom-diff.md" || true
-      cat "${bdir}/bom-diff.md" >> "${REPORT}"
-    else
-      warn "No KiBot BOM CSV found for ${name}; skipping cross-check."
+      [ -f "${bdir}/bom-diff.md" ] && cat "${bdir}/bom-diff.md" >> "${REPORT}"
     fi
   fi
 done

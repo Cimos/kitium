@@ -32,7 +32,7 @@ The make-or-break fact: **headless conversion exists for the PCB, but not the sc
 
 | Capability | Source | Headless? | Verdict |
 |---|---|---|---|
-| `kicad-cli pcb import --format altium` | `.PcbDoc` | ✅ native CLI (KiCad 9/10) | **Solid** |
+| `kicad-cli pcb import --format altium` | `.PcbDoc` | ✅ native CLI (**KiCad 10 only** — not in 9) | **Solid** |
 | DRC | PCB | ✅ | **Solid** |
 | Gerbers / drill / pick-&-place / fab package | PCB | ✅ | **Solid** |
 | 2D plot + 3D render | PCB | ✅ | **Solid** |
@@ -102,11 +102,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # diff needs history
-      - uses: Cimos/kitium@v1
+      - uses: Cimos/kitium@v0   # pre-1.0
         with:
           project: hardware/MyBoard.PrjPcb   # optional; auto-detected
           bom_csv: hardware/MyBoard_BOM.csv  # Altium-exported golden BOM
           drc: report                         # report | block
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ## 5. Validation semantics
@@ -131,7 +132,7 @@ immediate value. Golden-baseline comparison is a later add-on.
 
 | Phase | Deliverable | Exit criteria |
 |---|---|---|
-| **0 — De-risk** | Pull `kicad10_auto_full`; run `kicad-cli pcb import` on a real `.PcbDoc`; load result; run KiBot once | Converted board loads + DRC/render run. **Decision: KiCad 10 vs fall back to 9.** |
+| **0 — De-risk** | Build on `kicad/kicad:10.0` + `pip install kibot`; run `kicad-cli pcb import` on a real `.PcbDoc`; load result; run KiBot once | Converted board loads + DRC/render run; KiBot installs cleanly. **Pick exact KiCad 10 patch tag (avoid 10.0.1).** |
 | **1 — Conversion shim + container** | Entrypoint locates project, loops multi-board, converts each, stages `.kicad_pcb` | Multi-board sample fully converted in CI |
 | **2 — Core KiBot outputs** | Kitium KiBot config: DRC (info) + gerbers + renders + `diff` PDF + board BOM | Artifacts produced for every board |
 | **3 — PR experience** | PR comment (renders + tables), artifact upload, status checks (conversion = hard, DRC = soft) | Real PR shows comment + checks |
@@ -188,12 +189,16 @@ pull, and local `docker run` + CI use the *identical* artifact.
 
 - A **separate release workflow** builds + pushes to GHCR on a version-tag push
   (`docker/build-push-action` + `cache-to/from: type=gha`).
-- Versioning: immutable `vX.Y.Z` on git ref **and** image; moving `v1` / `v1.4` tags;
-  consumers pin `Cimos/kitium@v1`. Keep git tag ↔ image tag in lockstep (classic silent bug).
+- Versioning: immutable `vX.Y.Z` on git ref **and** image; moving major tag (pre-1.0:
+  `v0` git ref / `:0` image — published via `type=raw,value=0` because metadata-action
+  suppresses `{{major}}` for 0.x). Keep git tag ↔ image tag in lockstep (classic silent bug).
 - **Chicken-and-egg:** the image must exist in GHCR *before* the first `uses:` works —
-  push the image in the release job before the tag is consumable.
-- **Base image:** `inti-cmnb/kicadN_auto_full` (KiBot+KiAuto+Xvfb bundled, supports
-  KiCad 9/10). Pin an exact patch tag (see §11 render regression).
+  push the image in the release job (or a manual `workflow_dispatch`) first.
+- **Base image (corrected):** `kicad-cli pcb import` is **KiCad 10-only** (NOT in the
+  9.0 CLI), and the inti-cmnb KiBot images stop at KiCad 8 — so neither provides import.
+  We build on the **official `kicad/kicad:10.0`** image and add KiBot via `pip install
+  --break-system-packages kibot`. Pin an exact patch tag and **avoid 10.0.1** (render/STEP
+  regression that drops 3D models, §11). KiAuto/Xvfb (for the later GUI track) get added then.
 
 > ⚠️ The current scaffold's `action.yml` still uses `image: "Dockerfile"` — switch to
 > `docker://` once the first image is published to GHCR.

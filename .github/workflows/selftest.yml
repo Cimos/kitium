@@ -35,6 +35,13 @@ jobs:
             echo "expected empty board to fail the guard"; exit 1
           fi
 
+      - name: Board BOM extraction test (pcb_bom)
+        run: |
+          mkdir -p /tmp/b
+          printf '(kicad_pcb (footprint "R_0402" (property "Reference" "R1")(property "Value" "10k")))\n' > /tmp/b/x.kicad_pcb
+          python3 scripts/pcb_bom.py /tmp/b/x.kicad_pcb --out /tmp/b/bom.csv
+          grep -q 'R1,10k,R_0402' /tmp/b/bom.csv
+
       - name: BOM cross-check smoke test
         run: |
           mkdir -p /tmp/t

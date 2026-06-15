@@ -33,12 +33,16 @@ def inspect(text: str) -> dict:
     segments = len(re.findall(r"\(segment\b", text)) + len(re.findall(r"\(arc\b", text))
     vias = len(re.findall(r"\(via\b", text))
     zones = len(re.findall(r"\(zone\b", text))
-    # Net table entries: (net 0 "") (net 1 "GND") ...
-    nets = len(re.findall(r"\(net\s+\d+\s", text))
+    # Count DISTINCT net ordinals. The same (net N "name") token appears both in
+    # the net table AND on every connected pad, so counting occurrences overcounts
+    # ~5-20x; a set of ordinals collapses to the true net count.
+    nets = len(set(re.findall(r'\(net\s+(\d+)\s+"', text)))
     # Copper layers declared in the (layers ...) header, e.g. "F.Cu" "In1.Cu" "B.Cu".
     copper_layers = len(re.findall(r'"[A-Za-z0-9]+\.Cu"', text))
 
-    refs = _REF_PROP.findall(text) or _REF_FP_TEXT.findall(text)
+    # Union both modern + legacy forms (don't short-circuit — a mixed board can
+    # carry some legacy fp_text refs that the OR form would silently drop).
+    refs = _REF_PROP.findall(text) + _REF_FP_TEXT.findall(text)
     refs = [r for r in refs if r and r not in ("~", "")]
     distinct_refs = sorted(set(refs))
     unk = [r for r in refs if r.upper() == "UNK"]

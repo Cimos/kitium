@@ -35,7 +35,7 @@ for rel in "${FILES[@]}"; do
   size=$(wc -c < "${out}")
   case "${rel}" in
     *.PcbDoc|*.SchDoc)
-      magic=$(head -c 8 "${out}" | xxd -p 2>/dev/null || true)
+      magic=$(od -An -tx1 -N8 "${out}" 2>/dev/null | tr -d ' \n')
       if [ "${magic}" = "${OLE_MAGIC}" ]; then
         echo "  ✓ OLE binary OK (${size} bytes)"; ok=$((ok+1))
       else

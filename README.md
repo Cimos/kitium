@@ -56,11 +56,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: Cimos/kitium@v1
+      - uses: Cimos/kitium@v0   # pre-1.0; pin a concrete @v0.x.y for reproducibility
         with:
           project: hardware/MyBoard.PrjPcb   # optional; auto-detected
           bom_csv: hardware/MyBoard_BOM.csv  # Altium-exported golden BOM
           drc: report                         # report | block
+          github_token: ${{ secrets.GITHUB_TOKEN }}  # for the sticky PR comment
 ```
 
 See [`examples/consumer-workflow.yml`](./examples/consumer-workflow.yml).

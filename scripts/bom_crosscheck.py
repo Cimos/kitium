@@ -81,9 +81,10 @@ def main(argv=None):
 
     only_altium = sorted(set(altium) - set(kicad))   # dropped during conversion
     only_kicad = sorted(set(kicad) - set(altium))     # appeared unexpectedly
-    dupes = sorted(r for r, n in (kicad + altium).items() if (kicad[r] > 1 or altium[r] > 1))
+    # A refdes appearing >1 in either (flat) BOM is an integrity problem worth flagging.
+    dupes = sorted(r for r in (set(kicad) | set(altium)) if kicad[r] > 1 or altium[r] > 1)
 
-    mismatch = bool(only_altium or only_kicad)
+    mismatch = bool(only_altium or only_kicad or dupes)
 
     def _fmt(items, limit=40):
         if not items:
@@ -100,9 +101,13 @@ def main(argv=None):
         f"- Missing in KiCad (dropped in conversion): **{len(only_altium)}**",
         f"- Extra in KiCad (not in Altium BOM): **{len(only_kicad)}**",
         "",
+        f"- Duplicate designators: **{len(dupes)}**",
+        "",
         f"**Missing in KiCad:** {_fmt(only_altium)}",
         "",
         f"**Extra in KiCad:** {_fmt(only_kicad)}",
+        "",
+        f"**Duplicates:** {_fmt(dupes)}",
         "",
         f"**Result:** {'⚠️ mismatch' if mismatch else '✅ parity'}",
         "",

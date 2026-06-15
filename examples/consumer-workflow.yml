@@ -28,12 +28,13 @@ jobs:
       #   with: { fetch-depth: 0 }
 
       - name: Run Kitium
-        uses: Cimos/kitium@v0      # pin a release tag; @v1 once stable
+        uses: Cimos/kitium@v0      # pin a concrete release (e.g. @v0.1.0) for reproducibility
         with:
           # Auto-detected if omitted; set explicitly when layout varies:
           project: hardware/MyBoard.PrjPcb
           bom_csv: hardware/MyBoard_BOM.csv   # exported by your Altium OutputJob
           drc: report                          # report | block
+          github_token: ${{ secrets.GITHUB_TOKEN }}   # required for the sticky PR comment
 
       - name: Upload artifacts
         if: always()

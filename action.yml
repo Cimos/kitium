@@ -25,11 +25,16 @@ inputs:
     description: "Directory for generated artifacts (gerbers, renders, reports)."
     required: false
     default: "kitium-out"
+  github_token:
+    description: "Token for posting the sticky PR comment. Pass ${{ secrets.GITHUB_TOKEN }}; commenting is skipped if empty."
+    required: false
+    default: ""
 
 outputs:
   report:
+    # Docker actions must NOT set 'value:' (that's composite-action syntax). The
+    # runner maps this from what the container writes to $GITHUB_OUTPUT.
     description: "Path to the generated Markdown summary report."
-    value: ${{ steps.run.outputs.report }}
 
 runs:
   using: "docker"

@@ -59,13 +59,10 @@ outputs:
       width: 1600
       height: 1200
 
-  # --- BOM (board-derived; cross-checked against Altium downstream) -------
-  - name: board_bom
-    comment: "Board-derived BOM (refdes/value/footprint/qty)"
-    type: bom
-    dir: bom
-    options:
-      format: CSV
+  # NOTE: no KiBot 'bom' output here — KiBot's bom is SCHEMATIC-derived
+  # (loads components from the schematic, not the board), so it can't run on a
+  # board-only import. The board BOM is derived by scripts/pcb_bom.py instead and
+  # cross-checked against the Altium BOM in entrypoint.sh.
 
   # --- Visual diff (base vs head) -----------------------------------------
   # Wired by entrypoint in Phase 3 (needs the PR base git ref). Off by default
@@ -76,6 +73,8 @@ outputs:
     dir: diff
     run_by_default: false
     options:
+      # 'old' = the base ref to compare against (a git ref). entrypoint must inject
+      # the real PR base SHA here in Phase 3. Omit 'new' so it defaults to the
+      # current working-tree board (the literal "current" is NOT a valid value).
       old: "KIBOT_BASE_REF"   # TODO(phase 3): inject PR base SHA/ref
-      new: "current"
       cache_dir: .kibot-diff-cache

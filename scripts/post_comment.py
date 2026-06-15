@@ -51,7 +51,7 @@ def main(argv=None) -> int:
         print("usage: post_comment.py report.md", file=sys.stderr)
         return 1
 
-    token = os.environ.get("GITHUB_TOKEN")
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("INPUT_GITHUB_TOKEN")
     repo = os.environ.get("GITHUB_REPOSITORY")
     pr = _pr_number()
     if not (token and repo and pr):
@@ -62,8 +62,16 @@ def main(argv=None) -> int:
         body = f"{MARKER}\n{fh.read()}"
 
     try:
-        comments = _req("GET", f"{API}/repos/{repo}/issues/{pr}/comments?per_page=100", token) or []
-        existing = next((c for c in comments if MARKER in (c.get("body") or "")), None)
+        # Page through ALL comments — the sticky comment can scroll past the first
+        # 100 on a busy PR, which would otherwise make us post a duplicate each run.
+        existing = None
+        page = 1
+        while existing is None:
+            batch = _req("GET", f"{API}/repos/{repo}/issues/{pr}/comments?per_page=100&page={page}", token) or []
+            existing = next((c for c in batch if MARKER in (c.get("body") or "")), None)
+            if len(batch) < 100:
+                break
+            page += 1
         if existing:
             _req("PATCH", f"{API}/repos/{repo}/issues/comments/{existing['id']}", token, {"body": body})
             print(f"[kitium] updated PR comment {existing['id']}")

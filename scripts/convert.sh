@@ -7,6 +7,7 @@
 # STATUS: scaffold. Verify exact `kicad-cli pcb import` flags against the pinned
 # image in Phase 0 (documented: --format altium --output <out> <input>).
 set -euo pipefail
+shopt -s globstar nullglob   # so a recursive boards_glob (**/*.PcbDoc) works as expected
 
 PROJECT="${PROJECT:-}"
 BOARDS_GLOB="${BOARDS_GLOB:-}"
@@ -31,7 +32,9 @@ else
   while IFS= read -r f; do pcbdocs+=("${f}"); done < <(find "${base}" -type f -iname '*.PcbDoc' | sort)
 fi
 
-[ "${#pcbdocs[@]}" -gt 0 ] || { echo "[kitium] no .PcbDoc found" >&2; exit 0; }
+# Exit NONZERO on no boards so the caller can distinguish "found nothing" from
+# success (the caller can't read our exit code through stdout otherwise).
+[ "${#pcbdocs[@]}" -gt 0 ] || { echo "[kitium] no .PcbDoc found (project='${PROJECT}' glob='${BOARDS_GLOB}')" >&2; exit 2; }
 
 # Guard: a Git LFS pointer (or HTML redirect) is NOT a real board. Real Altium
 # files are OLE/CFB compound docs starting with magic D0CF11E0A1B11AE1. Feeding a
