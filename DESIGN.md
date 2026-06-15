@@ -156,3 +156,129 @@ Gate thresholds (DRC strictness etc.) are tuned **after Phase 2/3**, from real o
   pin the KiCad version in the image and bump deliberately.
 - **DRC noise** on converted boards — start informational, harden gradually.
 - **Multi-board projects** — outputs must be keyed per board; never assume one PcbDoc.
+
+---
+
+# Research-validated path (added 2026-06-15)
+
+A 5-track research sweep (dev loop, test data, git binaries, packaging, import
+gotchas) refined the plan below. Sources are linked inline.
+
+## 9. Dev/test loop — three concentric loops
+
+The deliverable *is* a Docker action, but iterating purely in CI is the wrong inner
+loop (1–5 min/round-trip). Use three loops, fastest first:
+
+1. **Inner (where ~90% of work happens):** run the KiCad container directly against a
+   sample board — `docker run --rm -v $PWD:/work <img> kicad-cli pcb import --format altium /work/board.PcbDoc`.
+   Native **Docker Engine in WSL2** (not Docker Desktop) — ~90% native perf, no licensing.
+   Keep everything in WSL ext4 (`~/git/kitium`, already correct) — **never** `/mnt/c`
+   (cross-OS small-file I/O is brutal).
+2. **Middle:** `nektos/act` to validate the workflow YAML / action wiring (inputs,
+   outputs, `${{ }}`, PR-comment step). Reuses the local daemon. Plumbing smoke-test
+   only — *passing in act ≠ passing in CI*.
+3. **Outer (fidelity gate):** real GitHub Actions on a scratch branch.
+
+## 10. Packaging — prebuilt GHCR image, referenced via `docker://`
+
+**Decision:** `action.yml` must reference a **prebuilt image** (`image: docker://ghcr.io/cimos/kitium:<tag>`),
+**not** `image: Dockerfile`. GitHub runners are ephemeral with no layer cache, so a
+Dockerfile-type action **rebuilds the ~1 GB image on every run**. Prebuilt = one ~20 s
+pull, and local `docker run` + CI use the *identical* artifact.
+
+- A **separate release workflow** builds + pushes to GHCR on a version-tag push
+  (`docker/build-push-action` + `cache-to/from: type=gha`).
+- Versioning: immutable `vX.Y.Z` on git ref **and** image; moving `v1` / `v1.4` tags;
+  consumers pin `Cimos/kitium@v1`. Keep git tag ↔ image tag in lockstep (classic silent bug).
+- **Chicken-and-egg:** the image must exist in GHCR *before* the first `uses:` works —
+  push the image in the release job before the tag is consumable.
+- **Base image:** `inti-cmnb/kicadN_auto_full` (KiBot+KiAuto+Xvfb bundled, supports
+  KiCad 9/10). Pin an exact patch tag (see §11 render regression).
+
+> ⚠️ The current scaffold's `action.yml` still uses `image: "Dockerfile"` — switch to
+> `docker://` once the first image is published to GHCR.
+
+## 11. Critical import gotchas (correctness-shaping)
+
+These reshape *what we build*, not just config knobs:
+
+- **No `kicad-cli pcb export bom` — in KiCad 9 *or* 10** ([gitlab #16302], open). A
+  board-only import yields no CLI BOM. → Board-derived BOM must come from **KiBot
+  parsing the `.kicad_pcb`** (or `pcb export ipc2581` BOM columns). Altium CSV stays the
+  BOM authority; we cross-check refdes/qty. Confirm KiBot `--board-only` BOM in Phase 0.
+- **DRC is noisy by design.** Altium design rules + **net-class membership don't import**
+  ([#15584]); **polygon cutouts import as over-restrictive keepouts** ([#15587]); **zones
+  import UNFILLED**. → **Re-fill zones** before DRC/gerber/render; **whitelist** known
+  false positives; gate with `drc --exit-code-violations --severity-error` + filters,
+  **never on raw counts**.
+- **Silent failure on old/ASCII (Protel) PcbDoc** ([#18467]) — imports with *no error*.
+  → **Pre-flight: assert board has >0 footprints/tracks; fail loud; surface stderr.**
+- **Refdes can regress to `UNK`** ([#18502], version-dependent) — breaks BOM cross-check.
+  → **Pre-flight: assert references aren't uniformly `UNK`.**
+- **3D placement read but not applied** + a **`pcb render`/`export step` regression in
+  9.0.9 & 10.0.1** that drops component models → renders may look bare. → Pin a known-good
+  patch (9.0.7 / 10.0.0), pass `--subst-models`, set 3D-model search-path env. **Renders
+  are best-effort, never a gate.**
+- **Layer mapping is lossy & normally interactive** — headless can't drive the mapping
+  dialog. → Verify mechanical/keepout/courtyard layers land where gerbers expect.
+- **Library conversion is GUI-only.** `kicad-cli` can *open* `.PcbLib/.SchLib` (read-only,
+  KiCad 8+) but **cannot migrate** them to `.kicad_mod/.kicad_sym` — that's a GUI action.
+- **Schematic import is GUI-only** (PrjPcb/flat-sch import added 9.0.3, still GUI-oriented).
+
+[gitlab #16302]: https://gitlab.com/kicad/code/kicad/-/work_items/16302
+[#15584]: https://gitlab.com/kicad/code/kicad/-/issues/15584
+[#15587]: https://gitlab.com/kicad/code/kicad/-/issues/15587
+[#18467]: https://gitlab.com/kicad/code/kicad/-/issues/18467
+[#18502]: https://gitlab.com/kicad/code/kicad/-/issues/18502
+
+## 12. Revised scope & feasibility (the GUI-only reality)
+
+Of the four things wanted for v1, **two are clean CLI and two require fragile GUI
+automation** (KiAuto + Xvfb). They split cleanly:
+
+| Feature | Path | Bucket |
+|---|---|---|
+| PCB convert + DRC + gerbers + fab | `kicad-cli` + KiBot | ✅ **v1 core (clean CLI)** |
+| 3D renders | `kicad-cli`/KiBot | 🟡 **v1, best-effort** (bare models; never a gate) |
+| BOM cross-check | KiBot board-BOM ↔ Altium CSV | ✅ **v1 core** |
+| **Schematic ERC / sch PDF** | KiAuto + Xvfb (GUI drive) | 🔴 **GUI-automation track** (later) |
+| **Altium library conversion** | KiAuto + Xvfb (GUI "Migrate") | 🔴 **GUI-automation track** (later) |
+
+**Recommendation:** ship the clean-CLI core (PCB gate + best-effort renders + BOM
+cross-check) as v1; group schematic ERC **and** library conversion into a single later
+**GUI-automation track**, since they share the same fragile KiAuto+Xvfb machinery.
+
+## 13. Test corpus — Phase 0 is no longer blocked on your board
+
+KiCad's own Altium-importer **regression fixtures** are the ideal dev corpus (the exact
+files KiCad validates its importer against), fetched on demand from the GitHub mirror:
+
+- **Primary (end-to-end):** `eDP_adapter_dvt1_source/` — real `.PrjPcb` + `.PcbDoc` +
+  two `.SchDoc` (Kosagi Novena eDP adapter). The only fixture with a full project tying a
+  board to multiple sheets — mirrors Kitium's whole pipeline.
+- **Second board:** `HiFive/HiFive1.B01.PcbDoc` (SiFive RISC-V dev board).
+- **Stress:** `issue24456/Fastino_Ground_Isolator.PcbDoc` (8.3 MB).
+- **Libraries (with golden outputs):** `pcblib/Tracks.v5/v6.PcbLib`, Espressif `.PcbLib`.
+
+> **Licensing:** as committed into KiCad these are **GPLv3** — so **do not vendor** them.
+> Download at dev/CI time from `raw.githubusercontent.com/KiCad/kicad-source-mirror/master/qa/data/pcbnew/plugins/altium/…`
+> (verify OLE magic `D0CF11E0A1B11AE1`). For anything we must commit, use the permissive
+> **venky-vn/STM32_BLUEPILL** (MPL-2.0). `scripts/fetch_fixtures.sh` fetches the corpus.
+
+## 14. Git binary handling (storage varies per repo)
+
+The action must be **LFS-agnostic and fail loud on pointer files**:
+
+- An unresolved LFS pointer is a ~130-byte text file, **not** a board — feeding it to
+  `kicad-cli` is a silent failure. The pre-flight OLE-magic check (§11) catches this too.
+- Detect LFS via `.gitattributes` / `git lfs ls-files`; only `git lfs pull` when the repo
+  actually tracks design files (blanket `lfs: true` errors on non-LFS repos).
+- `git-lfs` is on GitHub runners but **not** inside containers → materialize LFS on the
+  runner at checkout, not inside Kitium's container.
+- Every `lfs:true` checkout burns LFS **bandwidth quota** (10 GiB/mo Free/Pro) → consumers
+  should cache LFS objects ([nschloe/action-cached-lfs-checkout]).
+- **Project policy** (recommended to repos): track `*.PcbDoc *.SchDoc *.PcbLib *.SchLib
+  *.step` in LFS + the canonical [Altium `.gitignore`].
+
+[nschloe/action-cached-lfs-checkout]: https://github.com/nschloe/action-cached-lfs-checkout
+[Altium `.gitignore`]: https://github.com/github/gitignore/blob/main/community/AltiumDesigner.gitignore

@@ -1,3 +1,6 @@
+# Test fixtures are downloaded on demand (GPLv3 — not vendored). See scripts/fetch_fixtures.sh
+fixtures/
+
 # Kitium CI build products (KiCad files are ephemeral — never committed)
 build/
 out/
