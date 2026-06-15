@@ -1,0 +1,3 @@
+# Default runner image for `make act` (nektos/act) — the medium-size image has
+# enough preinstalled tooling for the workflow plumbing smoke test.
+-P ubuntu-latest=catthehacker/ubuntu:act-latest

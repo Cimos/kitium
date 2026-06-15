@@ -33,18 +33,38 @@ fi
 
 [ "${#pcbdocs[@]}" -gt 0 ] || { echo "[kitium] no .PcbDoc found" >&2; exit 0; }
 
+# Guard: a Git LFS pointer (or HTML redirect) is NOT a real board. Real Altium
+# files are OLE/CFB compound docs starting with magic D0CF11E0A1B11AE1. Feeding a
+# pointer to kicad-cli is a silent failure, so we reject it up front.
+assert_real_pcbdoc() {
+  local f="$1"
+  if head -c 64 "${f}" | grep -qa 'git-lfs.github.com/spec'; then
+    echo "[kitium] ERROR: ${f} is an unresolved Git LFS pointer, not a board." >&2
+    echo "[kitium]        Materialize it on the runner (git lfs pull / lfs: true) before Kitium runs." >&2
+    return 1
+  fi
+  local magic; magic=$(od -An -tx1 -N8 "${f}" 2>/dev/null | tr -d ' \n')
+  if [ "${magic}" != "d0cf11e0a1b11ae1" ]; then
+    echo "[kitium] ERROR: ${f} is not an OLE/CFB Altium binary (magic='${magic}')." >&2
+    return 1
+  fi
+}
+
 # --- Convert each board -----------------------------------------------------
 for pcb in "${pcbdocs[@]}"; do
+  assert_real_pcbdoc "${pcb}" || exit 1
   name="$(basename "${pcb}" .PcbDoc)"
   outdir="${BUILD_DIR}/${name}"
   mkdir -p "${outdir}"
   out="${outdir}/${name}.kicad_pcb"
 
   echo "[kitium] converting: ${pcb} -> ${out}" >&2
+  # --report-format json captures importer diagnostics as part of validation.
   kicad-cli pcb import \
     --format altium \
     --output "${out}" \
-    --report-file "${outdir}/import-report.txt" \
+    --report-format json \
+    --report-file "${outdir}/import-report.json" \
     "${pcb}" >&2
 
   echo "${out}"   # stdout: machine-readable list consumed by entrypoint.sh

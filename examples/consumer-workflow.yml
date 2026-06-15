@@ -10,22 +10,29 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write   # needed once PR-comment posting lands (Phase 3)
+  pull-requests: write   # for the sticky PR comment
 
 jobs:
   kitium:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # If your repo tracks the Altium binaries in Git LFS, you MUST materialize
+      # them — a plain checkout leaves pointer files that kicad-cli can't read.
+      # action-cached-lfs-checkout caches LFS objects so warm runs don't burn the
+      # 10 GiB/mo LFS bandwidth quota. For non-LFS repos, a normal checkout is fine.
+      - uses: nschloe/action-cached-lfs-checkout@v1
         with:
           fetch-depth: 0          # visual diff needs git history
+      # Non-LFS alternative:
+      # - uses: actions/checkout@v4
+      #   with: { fetch-depth: 0 }
 
       - name: Run Kitium
-        uses: Cimos/kitium@v1
+        uses: Cimos/kitium@v0      # pin a release tag; @v1 once stable
         with:
           # Auto-detected if omitted; set explicitly when layout varies:
           project: hardware/MyBoard.PrjPcb
-          bom_csv: hardware/MyBoard_BOM.csv   # Altium-exported golden BOM
+          bom_csv: hardware/MyBoard_BOM.csv   # exported by your Altium OutputJob
           drc: report                          # report | block
 
       - name: Upload artifacts

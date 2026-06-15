@@ -33,5 +33,9 @@ outputs:
 
 runs:
   using: "docker"
-  image: "Dockerfile"
+  # Reference a PREBUILT image (published to GHCR by .github/workflows/release.yml),
+  # NOT "Dockerfile" — a Dockerfile action rebuilds the ~1GB image on every run
+  # because GitHub runners are ephemeral with no layer cache. The image must exist
+  # in GHCR before this action is first used (it's published on a version-tag push).
+  image: "docker://ghcr.io/cimos/kitium:0"
 # Inputs are passed to the container as INPUT_<UPPERCASE_NAME> env vars automatically.

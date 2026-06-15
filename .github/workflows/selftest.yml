@@ -19,7 +19,21 @@ jobs:
           shellcheck scripts/*.sh
 
       - name: Python compile
-        run: python3 -m py_compile scripts/bom_crosscheck.py
+        run: python3 -m py_compile scripts/*.py
+
+      - name: Pre-flight guard test (pcb_inspect)
+        run: |
+          mkdir -p /tmp/p
+          printf '(kicad_pcb (footprint "R" (property "Reference" "R1"))(segment))\n' > /tmp/p/good.kicad_pcb
+          python3 scripts/pcb_inspect.py /tmp/p/good.kicad_pcb --assert
+          printf '(kicad_pcb (footprint "X" (property "Reference" "UNK")))\n' > /tmp/p/unk.kicad_pcb
+          if python3 scripts/pcb_inspect.py /tmp/p/unk.kicad_pcb --assert; then
+            echo "expected all-UNK board to fail the guard"; exit 1
+          fi
+          printf '(kicad_pcb)\n' > /tmp/p/empty.kicad_pcb
+          if python3 scripts/pcb_inspect.py /tmp/p/empty.kicad_pcb --assert; then
+            echo "expected empty board to fail the guard"; exit 1
+          fi
 
       - name: BOM cross-check smoke test
         run: |

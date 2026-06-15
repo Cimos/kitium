@@ -44,17 +44,34 @@ log "Converted ${#BOARDS[@]} board(s)."
 } > "${REPORT}"
 
 drc_failed=0
+preflight_failed=0
 
 # --- 3+4. Per-board outputs + checks ---------------------------------------
 for board in "${BOARDS[@]}"; do
   name="$(basename "${board}" .kicad_pcb)"
   bdir="$(dirname "${board}")"
-  log "Running KiBot outputs for board: ${name}"
 
+  # Altium imports zones UNFILLED — refill before any DRC/plot/render.
+  python3 "${SCRIPTS}/refill_zones.py" "${board}" 2>&1 | tee -a "${bdir}/kibot.log" || true
+
+  # Pre-flight guard: empty board / all-UNK refs are silent-import traps. Fail loud.
+  log "Inspecting ${name}"
+  if ! python3 "${SCRIPTS}/pcb_inspect.py" "${board}" --metrics-out "${bdir}/metrics.json" --assert; then
+    {
+      echo "## Board: \`${name}\` — ❌ PRE-FLIGHT FAILED"
+      echo
+      echo "Conversion produced an unusable board (empty or all-UNK references). See logs."
+      echo
+    } >> "${REPORT}"
+    preflight_failed=1
+    continue
+  fi
+
+  log "Running KiBot outputs for board: ${name}"
   # KiBot generates gerbers, renders, board-BOM, diff, and runs DRC.
   # --board-only because we have no schematic (no headless sch import).
   set +e
-  kibot -c "${KIBOT_CFG}" -b "${board}" -d "${bdir}/out" --board-only 2>&1 | tee "${bdir}/kibot.log"
+  kibot -c "${KIBOT_CFG}" -b "${board}" -d "${bdir}/out" --board-only 2>&1 | tee -a "${bdir}/kibot.log"
   kibot_rc=${PIPESTATUS[0]}
   set -e
   [ "${kibot_rc}" -eq 0 ] || { warn "KiBot reported issues for ${name} (rc=${kibot_rc}) — see kibot.log"; drc_failed=1; }
@@ -63,6 +80,7 @@ for board in "${BOARDS[@]}"; do
     echo "## Board: \`${name}\`"
     echo
     echo "- Artifacts: \`${bdir}/out\`"
+    [ -f "${bdir}/metrics.json" ] && echo "- Metrics: \`$(tr -d '\n ' < "${bdir}/metrics.json")\`"
     echo
   } >> "${REPORT}"
 
@@ -89,9 +107,14 @@ fi
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
   echo "report=${REPORT}" >> "${GITHUB_OUTPUT}"
 fi
-# TODO(phase 3): post ${REPORT} as a PR comment (needs GITHUB_TOKEN + gh/API).
+# Post/update the sticky PR comment (no-op off-PR; never fails the gate).
+python3 "${SCRIPTS}/post_comment.py" "${REPORT}" || true
 
 # --- Gate decision ----------------------------------------------------------
+# Pre-flight failure means the conversion is unusable — always hard-fail.
+if [ "${preflight_failed}" -ne 0 ]; then
+  fail "One or more boards failed pre-flight (empty or all-UNK references) — conversion unusable."
+fi
 if [ "${DRC_MODE}" = "block" ] && [ "${drc_failed}" -ne 0 ]; then
   fail "DRC gate is in 'block' mode and at least one board failed."
 fi

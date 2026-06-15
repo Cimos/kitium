@@ -8,13 +8,21 @@ kibot:
 preflight:
   # DRC runs but is informational by default — freshly converted boards are
   # noisy. The 'drc' input on the action decides whether the job blocks.
+  # Zones are refilled beforehand by scripts/refill_zones.py (Altium imports
+  # them unfilled, which would otherwise make DRC + gerbers wrong).
   run_drc: true
   # run_erc: omitted — requires a schematic (no headless .SchDoc import).
-  # Don't let KiBot abort the whole run on DRC errors; entrypoint gates instead.
-  filters:
-    - filter: "Tolerate import artifacts until baseline is clean (Phase 2 tuning)"
-      error: "silk_over_copper"
-      regex: "."
+
+# Phase 2: add entries here to suppress CONFIRMED Altium-import DRC false
+# positives — e.g. polygon cutouts imported as over-restrictive keepouts
+# (gitlab #15587) and clearance failures from missing netclass membership
+# (#15584). Left empty until confirmed against real DRC output so we never
+# hide genuine issues. See DESIGN.md §11.
+# filters:
+#   - name: kitium_import_artifacts
+#     type: generic
+#     filter: "..."   # KiBot violation type
+#     regex: "..."    # message match
 
 outputs:
   # --- Fabrication package -------------------------------------------------
