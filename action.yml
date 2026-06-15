@@ -1,0 +1,37 @@
+name: "Kitium"
+description: "Convert an Altium PCB project to KiCad and validate it (DRC, gerbers, renders, BOM cross-check) on every PR."
+branding:
+  icon: "check-circle"
+  color: "blue"
+
+inputs:
+  project:
+    description: "Path to the Altium project (.PrjPcb) or a directory containing it. If empty, Kitium auto-detects by convention."
+    required: false
+    default: ""
+  boards_glob:
+    description: "Glob for .PcbDoc files to convert, relative to the repo root. Overrides project-based discovery when set."
+    required: false
+    default: ""
+  bom_csv:
+    description: "Path to an Altium-exported BOM CSV to cross-check the converted board against. Skips the cross-check if empty."
+    required: false
+    default: ""
+  drc:
+    description: "DRC gate mode: 'report' (never blocks) or 'block' (fails the job on DRC errors)."
+    required: false
+    default: "report"
+  output_dir:
+    description: "Directory for generated artifacts (gerbers, renders, reports)."
+    required: false
+    default: "kitium-out"
+
+outputs:
+  report:
+    description: "Path to the generated Markdown summary report."
+    value: ${{ steps.run.outputs.report }}
+
+runs:
+  using: "docker"
+  image: "Dockerfile"
+# Inputs are passed to the container as INPUT_<UPPERCASE_NAME> env vars automatically.

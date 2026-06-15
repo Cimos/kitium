@@ -1,0 +1,36 @@
+# Drop this into a hardware repo at .github/workflows/pcb-gate.yml
+# to run the Kitium Altium->KiCad validation gate on every pull request.
+name: PCB Gate
+on:
+  pull_request:
+    paths:
+      - "**/*.PcbDoc"
+      - "**/*.SchDoc"
+      - "**/*.PrjPcb"
+
+permissions:
+  contents: read
+  pull-requests: write   # needed once PR-comment posting lands (Phase 3)
+
+jobs:
+  kitium:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # visual diff needs git history
+
+      - name: Run Kitium
+        uses: Cimos/kitium@v1
+        with:
+          # Auto-detected if omitted; set explicitly when layout varies:
+          project: hardware/MyBoard.PrjPcb
+          bom_csv: hardware/MyBoard_BOM.csv   # Altium-exported golden BOM
+          drc: report                          # report | block
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kitium-out
+          path: kitium-out/

@@ -1,0 +1,49 @@
+# Kitium's own CI: static checks on the scripts and configs.
+# (Does NOT run the container end-to-end yet — that needs a sample Altium
+# project and is wired up in Phase 0.)
+name: selftest
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ShellCheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck scripts/*.sh
+
+      - name: Python compile
+        run: python3 -m py_compile scripts/bom_crosscheck.py
+
+      - name: BOM cross-check smoke test
+        run: |
+          mkdir -p /tmp/t
+          printf 'Designator,Comment,Quantity\nR1,10k,1\nR2,10k,1\nC1,100nF,1\n' > /tmp/t/altium.csv
+          printf 'Reference,Value,Quantity\nR1,10k,1\nC1,100nF,1\n'              > /tmp/t/kicad.csv
+          python3 scripts/bom_crosscheck.py \
+            --kicad-bom /tmp/t/kicad.csv --altium-bom /tmp/t/altium.csv \
+            --out /tmp/t/diff.md
+          grep -q "Missing in KiCad" /tmp/t/diff.md
+          grep -q 'R2' /tmp/t/diff.md   # R2 was dropped -> must be flagged
+
+      - name: Validate YAML
+        run: |
+          python3 - <<'PY'
+          import sys, glob
+          try:
+              import yaml
+          except ImportError:
+              import subprocess
+              subprocess.check_call([sys.executable, "-m", "pip", "install", "pyyaml"])
+              import yaml
+          for f in glob.glob("kibot/*.yaml") + glob.glob("examples/*.yml") + ["action.yml"]:
+              with open(f) as fh:
+                  yaml.safe_load(fh)
+              print("ok:", f)
+          PY

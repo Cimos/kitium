@@ -1,0 +1,73 @@
+# Kitium KiBot configuration.
+#
+# Runs against a *board-only* import (we have no headless schematic), so every
+# output here is PCB-derived. Tune thresholds after Phase 0/2 on a real board.
+kibot:
+  version: 1
+
+preflight:
+  # DRC runs but is informational by default — freshly converted boards are
+  # noisy. The 'drc' input on the action decides whether the job blocks.
+  run_drc: true
+  # run_erc: omitted — requires a schematic (no headless .SchDoc import).
+  # Don't let KiBot abort the whole run on DRC errors; entrypoint gates instead.
+  filters:
+    - filter: "Tolerate import artifacts until baseline is clean (Phase 2 tuning)"
+      error: "silk_over_copper"
+      regex: "."
+
+outputs:
+  # --- Fabrication package -------------------------------------------------
+  - name: gerbers
+    comment: "Gerber plot files"
+    type: gerber
+    dir: fab/gerbers
+
+  - name: drill
+    comment: "Excellon drill files"
+    type: excellon
+    dir: fab/gerbers
+
+  - name: position
+    comment: "Pick-and-place / position file"
+    type: position
+    dir: fab/assembly
+    options:
+      format: CSV
+      units: millimeters
+
+  # --- Documentation / review --------------------------------------------
+  - name: pcb_pdf
+    comment: "PCB layer plots (PDF)"
+    type: pdf
+    dir: docs
+
+  - name: render_3d
+    comment: "3D board render (PNG) for the PR comment"
+    type: render_3d
+    dir: docs
+    options:
+      ray_tracing: true
+      width: 1600
+      height: 1200
+
+  # --- BOM (board-derived; cross-checked against Altium downstream) -------
+  - name: board_bom
+    comment: "Board-derived BOM (refdes/value/footprint/qty)"
+    type: bom
+    dir: bom
+    options:
+      format: CSV
+
+  # --- Visual diff (base vs head) -----------------------------------------
+  # Wired by entrypoint in Phase 3 (needs the PR base git ref). Off by default
+  # so the core run stays green until that plumbing lands.
+  - name: pcb_diff
+    comment: "Visual PCB diff vs the PR base"
+    type: diff
+    dir: diff
+    run_by_default: false
+    options:
+      old: "KIBOT_BASE_REF"   # TODO(phase 3): inject PR base SHA/ref
+      new: "current"
+      cache_dir: .kibot-diff-cache
