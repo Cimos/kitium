@@ -17,10 +17,13 @@ LABEL org.opencontainers.image.title="Kitium" \
 USER root
 # KiBot is a pip package layered on top of KiCad. Debian (bookworm+) marks the
 # system Python externally-managed (PEP 668), hence --break-system-packages.
+# --no-compile is REQUIRED: KiBot rewrites its own modules via a macro/plugin
+# system at import time, and pip's pre-compiled .pyc bytecode shadows it, causing
+# "cannot import name 'macros' from 'kibot.macros'" at runtime (KiBot's own advice).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3-pip git \
+ && apt-get install -y --no-install-recommends python3-pip git python3-lxml xvfb \
  && rm -rf /var/lib/apt/lists/* \
- && pip3 install --no-cache-dir --break-system-packages kibot
+ && pip3 install --no-cache-dir --no-compile --break-system-packages kibot
 
 # Scripts otherwise use only the Python 3 stdlib + tools already in the image.
 COPY scripts/ /opt/kitium/scripts/

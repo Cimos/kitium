@@ -6,11 +6,18 @@ kibot:
   version: 1
 
 preflight:
-  # DRC runs but is informational by default — freshly converted boards are
-  # noisy. The 'drc' input on the action decides whether the job blocks.
-  # Zones are refilled beforehand by scripts/refill_zones.py (Altium imports
-  # them unfilled, which would otherwise make DRC + gerbers wrong).
-  run_drc: true
+  # DRC runs but is INFORMATIONAL — freshly converted boards are noisy, so we must
+  # not let DRC abort artifact generation (KiBot aborts the whole run on a failing
+  # preflight). The action's 'drc' input + entrypoint.sh decide whether the job blocks.
+  # Zones are refilled beforehand by scripts/refill_zones.py (Altium imports them
+  # unfilled, which would otherwise make DRC + gerbers wrong).
+  drc:
+    enabled: true
+    dont_stop: true            # keep generating gerbers/pdf/render even if DRC errors
+    schematic_parity: false    # board-only import: there is no schematic to compare
+    ignore_unconnected: true   # Altium net info doesn't import (gitlab #15584) -> nets=0
+    format: [HTML, RPT]
+    dir: drc
   # run_erc: omitted — requires a schematic (no headless .SchDoc import).
 
 # Phase 2: add entries here to suppress CONFIRMED Altium-import DRC false
@@ -50,10 +57,16 @@ outputs:
     type: pdf
     dir: docs
 
+  # Phase 0 finding: KiBot's render_3d wraps KiAuto's pcbnew_do GUI driver, which
+  # fails on KiCad 10 (`pcbnew_do returned 1`, KiBot W143) even with the -full image's
+  # 3D models present. Disabled by default until Phase 2 swaps in a working render
+  # path (native `kicad-cli pcb render`, or `blender_export` on the -full image).
+  # Renders are best-effort and never a gate (DESIGN.md §5, §11, §12).
   - name: render_3d
     comment: "3D board render (PNG) for the PR comment"
     type: render_3d
     dir: docs
+    run_by_default: false
     options:
       ray_tracing: true
       width: 1600
