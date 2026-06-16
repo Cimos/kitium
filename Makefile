@@ -8,9 +8,10 @@
 #   make act        # middle loop: run the PR workflow locally via nektos/act
 
 IMAGE ?= kitium:dev
-BASE  ?= kicad/kicad:10.0.0   # pinned: 10.0.0 known-good; AVOID 10.0.1 (render regression)
+BASE  ?= kicad/kicad:10.0.0-full   # -full ships 3D models for kicad-cli render; AVOID 10.0.1
 BOARD ?= fixtures/eDP_adapter_dvt1_source/eDP_adapter_dvt1.PcbDoc
-DRUN  := docker run --rm -v $(PWD):/work -w /work --entrypoint bash $(IMAGE)
+USERFLAGS := --user $(shell id -u):$(shell id -g) -e HOME=/tmp
+DRUN  := docker run --rm $(USERFLAGS) -v $(PWD):/work -w /work --entrypoint bash $(IMAGE)
 
 .PHONY: fixtures image spike gate test act shellcheck
 
@@ -32,7 +33,7 @@ spike: fixtures image
 
 # Full gate over the fixtures, exercising the real entrypoint.
 gate: fixtures image
-	docker run --rm -v $(PWD):/work -w /work \
+	docker run --rm $(USERFLAGS) -v $(PWD):/work -w /work \
 	  -e INPUT_BOARDS_GLOB='fixtures/**/*.PcbDoc' \
 	  -e INPUT_DRC=report \
 	  -e INPUT_OUTPUT_DIR=fixtures/kitium-out \
@@ -40,7 +41,8 @@ gate: fixtures image
 
 test: shellcheck
 	python3 -m py_compile scripts/*.py
-	@echo "OK: python compiles"
+	python3 tests/test_drc_gate.py
+	@echo "OK: python compiles + unit tests pass"
 
 shellcheck:
 	shellcheck scripts/*.sh
