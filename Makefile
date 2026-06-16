@@ -41,7 +41,8 @@ gate: fixtures image
 
 test: shellcheck
 	python3 -m py_compile scripts/*.py
-	@echo "OK: python compiles"
+	python3 tests/test_drc_gate.py
+	@echo "OK: python compiles + unit tests pass"
 
 shellcheck:
 	shellcheck scripts/*.sh
