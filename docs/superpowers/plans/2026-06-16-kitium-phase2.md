@@ -220,9 +220,12 @@ def _run(report: dict, *args):
         os.unlink(path)
 
 
-def test_counts_only_error_severity():
+def test_counts_only_unexcluded_error_severity():
+    # KiBot annotates filtered violations with excluded=true IN PLACE (it does not
+    # remove them from the raw KiCad JSON). The gate must ignore those.
     report = {"violations": [
         {"type": "tracks_crossing", "severity": "error"},
+        {"type": "clearance", "severity": "error", "excluded": True},  # filtered -> ignore
         {"type": "silk_overlap", "severity": "warning"},
     ]}
     proc = _run(report)
@@ -243,7 +246,7 @@ def test_missing_violations_key_is_clean():
 
 
 if __name__ == "__main__":
-    test_counts_only_error_severity()
+    test_counts_only_unexcluded_error_severity()
     test_clean_report_exits_zero()
     test_missing_violations_key_is_clean()
     print("OK: drc_gate tests passed")
@@ -265,8 +268,9 @@ KiBot's `drc` preflight (format JSON) emits KiCad's native DRC JSON:
   {"violations": [{"type","severity","description","items"}, ...],
    "unconnected_items": [...], "schematic_parity": [...], ...}
 
-KiBot applies `drc.filters` (change_to: ignore) BEFORE writing this report, so the
-remaining error-severity entries here are the POST-FILTER gateable count — the signal
+KiBot applies `drc.filters` (change_to: ignore) by annotating each filtered violation
+with `excluded: true` IN PLACE — it does NOT remove them from this raw KiCad JSON. So
+the gateable count = error-severity violations that are NOT excluded. That's the signal
 entrypoint.sh uses to decide `block` mode. Renders/BOM never reach this path.
 
 Usage:
@@ -282,7 +286,10 @@ import sys
 
 
 def gateable(report: dict, severity: str) -> list:
-    return [v for v in report.get("violations", []) if v.get("severity") == severity]
+    return [
+        v for v in report.get("violations", [])
+        if v.get("severity") == severity and not v.get("excluded")
+    ]
 
 
 def main(argv=None) -> int:
