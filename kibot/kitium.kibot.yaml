@@ -16,8 +16,35 @@ preflight:
     dont_stop: true            # keep generating gerbers/pdf/render even if DRC errors
     schematic_parity: false    # board-only import: there is no schematic to compare
     ignore_unconnected: true   # Altium net info doesn't import (gitlab #15584) -> nets=0
-    format: [HTML, RPT]
+    format: [HTML, RPT, JSON]  # JSON is read by scripts/drc_gate.py for the gate count
     dir: drc
+    # Suppress CONFIRMED Altium-import artifacts (Phase 0/2 histogram). Each is noise
+    # because board design rules + net-class membership don't import (DESIGN.md §11),
+    # so every clearance/width/drill check fires against KiCad defaults. We filter by
+    # exact violation `error` id only — never broad regex — so genuine/new types stay
+    # visible. NOT filtered: tracks_crossing (real geometry) and all warning severities.
+    filters:
+      - filter: "Altium import: clearances use KiCad defaults (net-class not imported, gitlab #15584)"
+        error: clearance
+        change_to: ignore
+      - filter: "Altium import: board min track width not imported (gitlab #15584)"
+        error: track_width
+        change_to: ignore
+      - filter: "Altium import: hole/drill size vs un-imported board constraint"
+        error: drill_out_of_range
+        change_to: ignore
+      - filter: "Altium import: hole clearance vs un-imported board constraint"
+        error: hole_clearance
+        change_to: ignore
+      - filter: "Altium import: solder-mask bridge from lost net connectivity (nets=0)"
+        error: solder_mask_bridge
+        change_to: ignore
+      - filter: "Altium import: zone refill thermal-spoke artifact"
+        error: starved_thermal
+        change_to: ignore
+      - filter: "Altium import: unresolved Altium text variable"
+        error: unresolved_variable
+        change_to: ignore
   # run_erc: omitted — requires a schematic (no headless .SchDoc import).
 
 # Phase 2: add entries here to suppress CONFIRMED Altium-import DRC false
