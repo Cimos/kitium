@@ -89,12 +89,31 @@ for board in "${BOARDS[@]}"; do
   kibot -c "${KIBOT_CFG}" -b "${board}" -d "${bdir}/out" 2>&1 | tee -a "${bdir}/kibot.log"
   kibot_rc=${PIPESTATUS[0]}
   set -e
-  [ "${kibot_rc}" -eq 0 ] || { warn "KiBot reported issues for ${name} (rc=${kibot_rc}) — see kibot.log"; drc_failed=1; }
+  [ "${kibot_rc}" -eq 0 ] || warn "KiBot exited non-zero for ${name} (rc=${kibot_rc}) — see kibot.log (DRC dont_stop is expected)"
+
+  # Gate signal: count POST-FILTER DRC errors from the JSON report (not kibot's rc,
+  # which is 0 under dont_stop). Missing report = can't verify -> treat as failure.
+  drc_json="$(find "${bdir}/out/drc" -name '*.json' 2>/dev/null | head -1)"
+  if [ -n "${drc_json}" ]; then
+    set +e
+    python3 "${SCRIPTS}/drc_gate.py" "${drc_json}" --summary-out "${bdir}/drc-summary.txt"
+    drc_rc=$?
+    set -e
+    [ "${drc_rc}" -eq 0 ] || { warn "${name}: post-filter DRC violations present (see drc-summary.txt)"; drc_failed=1; }
+  else
+    warn "${name}: no DRC JSON report found — cannot verify DRC"; drc_failed=1
+  fi
+
+  # Best-effort 3D render (never gates; render_board.sh always exits 0).
+  bash "${SCRIPTS}/render_board.sh" "${board}" "${bdir}/out/docs/${name}-3d.png" 2>&1 | tee -a "${bdir}/kibot.log" || true
 
   {
     echo "## Board: \`${name}\`"
     echo
     echo "- Artifacts: \`${bdir}/out\`"
+    if [ -f "${bdir}/drc-summary.txt" ]; then
+      echo "- DRC (post-filter): $(head -1 "${bdir}/drc-summary.txt")"
+    fi
     if [ -f "${bdir}/metrics.json" ]; then
       echo "<details><summary>Metrics</summary>"
       echo
@@ -107,19 +126,21 @@ for board in "${BOARDS[@]}"; do
   } >> "${REPORT}"
 
   # Derive the board BOM ourselves — KiBot's bom output is schematic-only and a
-  # board-only import has no schematic. Then cross-check vs Altium's exported BOM
-  # (Altium stays the BOM authority for MPN/supplier data).
-  if [ -n "${BOM_CSV}" ]; then
-    kicad_bom="${bdir}/board-bom.csv"
-    python3 "${SCRIPTS}/pcb_bom.py" "${board}" --out "${kicad_bom}" || true
-    if [ -f "${kicad_bom}" ]; then
-      log "Cross-checking BOM for ${name} against ${BOM_CSV}"
-      python3 "${SCRIPTS}/bom_crosscheck.py" \
-        --kicad-bom "${kicad_bom}" \
-        --altium-bom "${BOM_CSV}" \
-        --out "${bdir}/bom-diff.md" || true
-      [ -f "${bdir}/bom-diff.md" ] && cat "${bdir}/bom-diff.md" >> "${REPORT}"
-    fi
+  # board-only import has no schematic. Always generate it: it's a useful artifact in
+  # its own right and is the input the Phase 4 cross-check will consume.
+  kicad_bom="${bdir}/board-bom.csv"
+  python3 "${SCRIPTS}/pcb_bom.py" "${board}" --out "${kicad_bom}" || warn "${name}: board BOM generation failed"
+  [ -f "${kicad_bom}" ] && echo "- Board BOM: \`${kicad_bom}\`" >> "${REPORT}"
+
+  # Cross-check vs the Altium golden BOM only when one is supplied (Altium stays the
+  # BOM authority for MPN/supplier data). Cross-check tuning is Phase 4.
+  if [ -n "${BOM_CSV}" ] && [ -f "${kicad_bom}" ]; then
+    log "Cross-checking BOM for ${name} against ${BOM_CSV}"
+    python3 "${SCRIPTS}/bom_crosscheck.py" \
+      --kicad-bom "${kicad_bom}" \
+      --altium-bom "${BOM_CSV}" \
+      --out "${bdir}/bom-diff.md" || true
+    [ -f "${bdir}/bom-diff.md" ] && cat "${bdir}/bom-diff.md" >> "${REPORT}"
   fi
 done
 
