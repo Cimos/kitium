@@ -144,11 +144,18 @@ Gate thresholds (DRC strictness etc.) are tuned **after Phase 2/3**, from real o
 
 ## 7. Open questions / assumptions to confirm in Phase 0
 
-- [ ] Exact `kicad-cli pcb import` flag syntax & altium support on the pinned image.
-- [ ] Does the current KiBot release fully support KiCad 10's `pcbnew` API? (else pin KiCad 9.)
+> **Phase 0 ran 2026-06-16** — see [`docs/phase0-findings.md`](./docs/phase0-findings.md).
+
+- [x] Exact `kicad-cli pcb import` flag syntax & altium support on the pinned image.
+  → Confirmed on `kicad/kicad:10.0.0`; unmapped inner-plane layers warn but don't fail.
+- [x] Does the current KiBot release fully support KiCad 10's `pcbnew` API? (else pin KiCad 9.)
+  → **YES** (KiBot 1.9.0) after `pip --no-compile` + `python3-lxml` + `xvfb`. KiCad 9 fork avoided.
 - [ ] The repos' **"consistent convention"**: where `.PrjPcb`/`.PcbDoc` live + naming pattern (drives auto-detect).
+  → Not testable with fixtures; org policy decision, still open.
 - [ ] Altium BOM CSV column names (for the cross-check column mapping).
-- [ ] Which component fields survive PcbDoc → KiCad footprint import (affects board-BOM usefulness).
+  → Deferred to Phase 4 (needs a real Altium BOM export).
+- [x] Which component fields survive PcbDoc → KiCad footprint import (affects board-BOM usefulness).
+  → Footprints/refdes/values survive (112 refs, 0 UNK); **nets do NOT import (`nets: 0`)**. Full BOM-field audit in Phase 4.
 
 ## 8. Known risks
 

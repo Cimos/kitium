@@ -8,7 +8,7 @@
 #   make act        # middle loop: run the PR workflow locally via nektos/act
 
 IMAGE ?= kitium:dev
-BASE  ?= kicad/kicad:10.0   # pcb import is KiCad 10-only; official image + pip KiBot
+BASE  ?= kicad/kicad:10.0.0   # pinned: 10.0.0 known-good; AVOID 10.0.1 (render regression)
 BOARD ?= fixtures/eDP_adapter_dvt1_source/eDP_adapter_dvt1.PcbDoc
 DRUN  := docker run --rm -v $(PWD):/work -w /work --entrypoint bash $(IMAGE)
 
