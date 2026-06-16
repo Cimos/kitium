@@ -260,6 +260,16 @@ automation** (KiAuto + Xvfb). They split cleanly:
 cross-check) as v1; group schematic ERC **and** library conversion into a single later
 **GUI-automation track**, since they share the same fragile KiAuto+Xvfb machinery.
 
+> **Phase 2 correction (2026-06-16, see [`docs/phase2-findings.md`](./docs/phase2-findings.md)):**
+> The "clean CLI" labels above are partly wrong for *this* KiBot version.
+> - **DRC + layer PDFs run via KiBot → KiAuto (`pcbnew_do`) under Xvfb**, not pure
+>   `kicad-cli` — so the image needs `xvfb` even for the v1 core.
+> - **KiBot's `render_3d` is broken on KiCad 10** (`pcbnew_do` returns 1, W143). We
+>   render via **native `kicad-cli pcb render`** instead (best-effort, `-full` image
+>   for 3D models), bypassing KiBot for renders.
+> - **DRC** is filtered (7 confirmed import-artifact types) and **informational**; the
+>   `block` decision keys off the post-filter error count via `scripts/drc_gate.py`.
+
 ## 13. Test corpus — Phase 0 is no longer blocked on your board
 
 KiCad's own Altium-importer **regression fixtures** are the ideal dev corpus (the exact
