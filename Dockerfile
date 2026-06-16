@@ -7,7 +7,7 @@
 # Pin a concrete patch tag for reproducibility, and AVOID 10.0.1 — it has a
 # kicad-cli render/STEP regression that drops component 3D models. Phase 0 confirms
 # the exact good tag and adds any system deps KiBot needs for our outputs.
-ARG KICAD_IMAGE=kicad/kicad:10.0.0
+ARG KICAD_IMAGE=kicad/kicad:10.0.0-full
 FROM ${KICAD_IMAGE}
 
 LABEL org.opencontainers.image.title="Kitium" \
