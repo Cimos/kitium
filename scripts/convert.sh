@@ -4,8 +4,8 @@
 #
 # Inputs via env: PROJECT, BOARDS_GLOB, BUILD_DIR
 #
-# STATUS: scaffold. Verify exact `kicad-cli pcb import` flags against the pinned
-# image in Phase 0 (documented: --format altium --output <out> <input>).
+# Verified in Phase 0: `kicad-cli pcb import --format altium --output <out>
+# --report-format json --report-file <f> <input>` on KiCad 10 (kicad/kicad:10.0.0-full).
 set -euo pipefail
 shopt -s globstar nullglob   # so a recursive boards_glob (**/*.PcbDoc) works as expected
 

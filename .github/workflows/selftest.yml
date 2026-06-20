@@ -1,6 +1,6 @@
-# Kitium's own CI: static checks on the scripts and configs.
-# (Does NOT run the container end-to-end yet — that needs a sample Altium
-# project and is wired up in Phase 0.)
+# Kitium's own CI: static checks on the scripts/configs, plus an end-to-end gate
+# that builds the container and runs the real pipeline on a downloaded Altium
+# fixture (KiCad's GPLv3 importer test data — fetched on demand, never vendored).
 name: selftest
 on:
   push:
@@ -73,3 +73,37 @@ jobs:
                   yaml.safe_load(fh)
               print("ok:", f)
           PY
+
+  end-to-end:
+    name: end-to-end gate (real Altium fixture)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # `make gate` = fetch KiCad's Altium importer fixtures (fetch_fixtures.sh,
+      # GPLv3, downloaded on demand — never vendored) -> build the KiCad-10
+      # container -> run the real entrypoint (convert -> KiBot -> DRC gate ->
+      # render -> board BOM -> report) in DRC=report mode. Exits non-zero on a
+      # conversion/pre-flight failure, so a green run proves the pipeline works.
+      - name: Build image, fetch fixture, run the gate
+        run: make gate
+
+      - name: Assert the gate produced a populated datapack
+        run: |
+          set -euo pipefail
+          out=fixtures/kitium-out
+          test -d "$out" || { echo "missing output dir: $out"; exit 1; }
+          echo "--- output files ---"; find "$out" -type f | sort | head -60
+          n=$(find "$out" -type f | wc -l)
+          echo "produced $n output file(s)"
+          [ "$n" -ge 5 ] || { echo "expected a populated datapack (>=5 files), got $n"; exit 1; }
+          echo "e2e gate OK"
+
+      - name: Upload gate output (diagnostics)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-kitium-out
+          path: fixtures/kitium-out/
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Kitium entrypoint: locate -> convert -> kibot -> cross-check -> report.
 #
-# STATUS: scaffold. The conversion and KiBot invocations are written against
-# documented KiCad 9/10 behaviour and will be verified end-to-end in Phase 0.
+# Verified end-to-end in Phase 0/2 on real Altium fixtures (eDP_adapter_dvt1,
+# HiFive1.B01) against the pinned KiCad-10 image. See docs/phase0-findings.md.
 set -euo pipefail
 
 KITIUM_HOME="${KITIUM_HOME:-/opt/kitium}"

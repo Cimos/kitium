@@ -13,10 +13,20 @@ gerbers, renders, and a BOM cross-check — on every pull request.**
 
 ## Status
 
-🚧 **Early scaffold (pre-Phase 0).** The design is settled (see
-[`DESIGN.md`](./DESIGN.md)); the runtime is not yet verified end-to-end. The
-conversion command and KiBot config in this repo are written against the documented
-KiCad 9/10 behaviour and will be confirmed against a real Altium project in Phase 0.
+**`v0.1.0` — the PCB gate works end-to-end.** Phase 0 (de-risk) and Phase 2 (core
+outputs) are complete and verified on real Altium fixtures (KiCad's `eDP_adapter_dvt1`
+and `HiFive1.B01`): headless conversion, zone refill, a filtered DRC gate, gerbers /
+drill / position / layer-PDFs, a 3D render, and a board-derived BOM all run in the
+KiCad-10 container.
+
+- ✅ **Working today:** PCB conversion · DRC gate (`report`/`block`) · fab outputs ·
+  3D render · board BOM · BOM cross-check (when an Altium BOM CSV is supplied).
+- 🟡 **Wired but not yet hardened:** the sticky PR comment (Phase 3) and the
+  base-vs-head **visual diff** (base-ref wiring pending).
+- 🔴 **Not started:** schematic **ERC** — no headless `.SchDoc` import; a
+  non-blocking stretch goal (Phase 6).
+
+See [`DESIGN.md`](./DESIGN.md) §6 for the roadmap.
 
 ## What it does
 
@@ -35,14 +45,15 @@ It does **not** make KiCad your source of truth and does **not** commit KiCad fi
 
 ### What's reliable vs not
 
-- ✅ PCB conversion, DRC, gerbers, renders, visual diff — solid (native, headless).
+- ✅ PCB conversion, DRC, gerbers, renders — solid (native, headless).
+- 🟡 Visual diff — config is in place; base-ref wiring is pending (Phase 3).
 - 🟡 BOM — validated by **cross-check against your Altium BOM export** (KiCad can't
   recover MPN/supplier fields from the PCB alone).
 - 🔴 Schematic ERC — only via fragile GUI automation; a non-blocking stretch goal.
 
 See [`DESIGN.md`](./DESIGN.md) §2 for the full feasibility breakdown.
 
-## Quickstart (planned interface)
+## Quickstart
 
 Add to a hardware repo:
 
@@ -56,7 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: Cimos/kitium@v0   # pre-1.0; pin a concrete @v0.x.y for reproducibility
+      - uses: Cimos/kitium@v0.1.0   # pre-1.0; pin a concrete @v0.x.y for reproducibility
         with:
           project: hardware/MyBoard.PrjPcb   # optional; auto-detected
           bom_csv: hardware/MyBoard_BOM.csv  # Altium-exported golden BOM
@@ -69,8 +80,8 @@ See [`examples/consumer-workflow.yml`](./examples/consumer-workflow.yml).
 ## Repo layout
 
 ```
-action.yml                 # reusable Docker-based GitHub Action
-Dockerfile                 # FROM inti-cmnb kicad image + kitium scripts
+action.yml                 # Docker-based GitHub Action (runs a prebuilt GHCR image)
+Dockerfile                 # FROM kicad/kicad:10 + KiBot + kitium scripts
 scripts/
   entrypoint.sh            # orchestrates locate → convert → kibot → report
   convert.sh               # kicad-cli pcb import, multi-board loop
