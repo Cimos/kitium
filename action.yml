@@ -26,7 +26,7 @@ inputs:
     required: false
     default: "kitium-out"
   github_token:
-    description: "Token for posting the sticky PR comment. Pass ${{ secrets.GITHUB_TOKEN }}; commenting is skipped if empty."
+    description: "Token for posting the sticky PR comment. Pass the workflow's GITHUB_TOKEN secret; commenting is skipped if empty."
     required: false
     default: ""
 

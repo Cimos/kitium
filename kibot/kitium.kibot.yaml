@@ -36,6 +36,15 @@ preflight:
       - filter: "Altium import: hole clearance vs un-imported board constraint"
         error: hole_clearance
         change_to: ignore
+      - filter: "Altium import: annular ring vs un-imported board constraint"
+        error: annular_width
+        change_to: ignore
+      - filter: "Altium import: via diameter vs un-imported board constraint"
+        error: via_diameter
+        change_to: ignore
+      - filter: "Altium import: copper-to-edge clearance vs un-imported board constraint"
+        error: copper_edge_clearance
+        change_to: ignore
       - filter: "Altium import: solder-mask bridge from lost net connectivity (nets=0)"
         error: solder_mask_bridge
         change_to: ignore
