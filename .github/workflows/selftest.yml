@@ -7,11 +7,16 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: static checks only need to read the repo.
+permissions:
+  contents: read
+
 jobs:
   static-checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # SHA-pinned (audited; official actions org) against tag re-mapping.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: ShellCheck
         run: |
