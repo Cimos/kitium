@@ -24,6 +24,14 @@ log()  { printf '\033[1;34m[kitium]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[kitium]\033[0m %s\n' "$*" >&2; }
 fail() { printf '\033[1;31m[kitium]\033[0m %s\n' "$*" >&2; exit 1; }
 
+# Validate the gate switch up front: an unrecognised value (typo like "Block",
+# "blocking") must NOT silently fall through to non-blocking 'report' — that would
+# give a green check on a board with real DRC errors, the exact failure we prevent.
+case "${DRC_MODE}" in
+  report|block) ;;
+  *) fail "Invalid 'drc' input '${DRC_MODE}' (expected 'report' or 'block')." ;;
+esac
+
 # --- 1+2. Locate & convert every board -------------------------------------
 # convert.sh writes one <board>.kicad_pcb per Altium .PcbDoc under BUILD_DIR
 # and prints the resulting board paths, one per line.
@@ -92,16 +100,20 @@ for board in "${BOARDS[@]}"; do
   [ "${kibot_rc}" -eq 0 ] || warn "KiBot exited non-zero for ${name} (rc=${kibot_rc}) — see kibot.log (DRC dont_stop is expected)"
 
   # Gate signal: count POST-FILTER DRC errors from the JSON report (not kibot's rc,
-  # which is 0 under dont_stop). Missing report = can't verify -> treat as failure.
-  drc_json="$(find "${bdir}/out/drc" -name '*.json' 2>/dev/null | head -1)"
-  if [ -n "${drc_json}" ]; then
+  # which is 0 under dont_stop). We expect exactly one DRC JSON per board; zero or
+  # several means we can't trust the count, so fail closed. (find order is unsorted,
+  # so never just head -1 — that could pick the wrong file silently.)
+  mapfile -t drc_jsons < <(find "${bdir}/out/drc" -name '*.json' 2>/dev/null | sort)
+  if [ "${#drc_jsons[@]}" -eq 1 ]; then
     set +e
-    python3 "${SCRIPTS}/drc_gate.py" "${drc_json}" --summary-out "${bdir}/drc-summary.txt"
+    python3 "${SCRIPTS}/drc_gate.py" "${drc_jsons[0]}" --summary-out "${bdir}/drc-summary.txt"
     drc_rc=$?
     set -e
     [ "${drc_rc}" -eq 0 ] || { warn "${name}: post-filter DRC violations present (see drc-summary.txt)"; drc_failed=1; }
-  else
+  elif [ "${#drc_jsons[@]}" -eq 0 ]; then
     warn "${name}: no DRC JSON report found — cannot verify DRC"; drc_failed=1
+  else
+    warn "${name}: ${#drc_jsons[@]} DRC JSON reports found (expected 1) — cannot disambiguate, failing closed"; drc_failed=1
   fi
 
   # Best-effort 3D render (never gates; render_board.sh always exits 0).

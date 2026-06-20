@@ -36,8 +36,14 @@ def main(argv=None) -> int:
     ap.add_argument("--summary-out")
     args = ap.parse_args(argv)
 
-    with open(args.report, encoding="utf-8") as fh:
-        report = json.load(fh)
+    # Fail closed on an unreadable/truncated report, but with a legible reason
+    # instead of a bare traceback (entrypoint treats our non-zero exit as a gate fail).
+    try:
+        with open(args.report, encoding="utf-8") as fh:
+            report = json.load(fh)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"DRC report unreadable ({args.report}): {e}", file=sys.stderr)
+        return 1
 
     viol = gateable(report, args.severity)
     by_type = collections.Counter(v.get("type", "?") for v in viol)
