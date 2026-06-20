@@ -49,8 +49,23 @@ def test_missing_violations_key_is_clean():
     assert proc.returncode == 0, proc.stderr
 
 
+def test_malformed_json_fails_closed():
+    # A truncated/non-JSON report must fail closed (exit 1) with a legible message,
+    # not a bare traceback — entrypoint treats our non-zero exit as a gate failure.
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+        fh.write("{ this is not valid json")
+        path = fh.name
+    try:
+        proc = subprocess.run([sys.executable, GATE, path], capture_output=True, text=True)
+        assert proc.returncode == 1, proc.stdout
+        assert "unreadable" in proc.stderr.lower(), proc.stderr
+    finally:
+        os.unlink(path)
+
+
 if __name__ == "__main__":
     test_counts_only_unexcluded_error_severity()
     test_clean_report_exits_zero()
     test_missing_violations_key_is_clean()
+    test_malformed_json_fails_closed()
     print("OK: drc_gate tests passed")

@@ -47,17 +47,6 @@ preflight:
         change_to: ignore
   # run_erc: omitted — requires a schematic (no headless .SchDoc import).
 
-# Phase 2: add entries here to suppress CONFIRMED Altium-import DRC false
-# positives — e.g. polygon cutouts imported as over-restrictive keepouts
-# (gitlab #15587) and clearance failures from missing netclass membership
-# (#15584). Left empty until confirmed against real DRC output so we never
-# hide genuine issues. See DESIGN.md §11.
-# filters:
-#   - name: kitium_import_artifacts
-#     type: generic
-#     filter: "..."   # KiBot violation type
-#     regex: "..."    # message match
-
 outputs:
   # --- Fabrication package -------------------------------------------------
   - name: gerbers
