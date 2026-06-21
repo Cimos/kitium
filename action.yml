@@ -29,6 +29,18 @@ inputs:
     description: "Token for posting the sticky PR comment. Pass the workflow's GITHUB_TOKEN secret; commenting is skipped if empty."
     required: false
     default: ""
+  mode:
+    description: "'gate' (default): convert + validate + report. 'comment': only post a pre-generated report to a PR (used by the fork-safe companion workflow)."
+    required: false
+    default: "gate"
+  report_file:
+    description: "comment mode only: path to the report Markdown to post (default: <output_dir>/kitium-report.md)."
+    required: false
+    default: ""
+  pr_number:
+    description: "comment mode only: PR number to comment on (the workflow_run companion has no pull_request event to read it from)."
+    required: false
+    default: ""
 
 outputs:
   report:

@@ -36,6 +36,13 @@ def _req(method, url, token, data=None):
 
 
 def _pr_number() -> int | None:
+    # Explicit override for the fork-safe companion: a workflow_run job has no
+    # pull_request event to read, so the analysis job passes the PR number through
+    # an artifact and we receive it here. Validate it's numeric before trusting it
+    # (the artifact originates from a possibly-forked PR run).
+    override = os.environ.get("KITIUM_PR_NUMBER", "").strip()
+    if override:
+        return int(override) if override.isdigit() else None
     path = os.environ.get("GITHUB_EVENT_PATH")
     if not path or not os.path.exists(path):
         return None
