@@ -1,0 +1,123 @@
+# Kitium KiBot configuration.
+#
+# Runs against a *board-only* import (we have no headless schematic), so every
+# output here is PCB-derived. Tune thresholds after Phase 0/2 on a real board.
+kibot:
+  version: 1
+
+preflight:
+  # DRC runs but is INFORMATIONAL — freshly converted boards are noisy, so we must
+  # not let DRC abort artifact generation (KiBot aborts the whole run on a failing
+  # preflight). The action's 'drc' input + entrypoint.sh decide whether the job blocks.
+  # Zones are refilled beforehand by scripts/refill_zones.py (Altium imports them
+  # unfilled, which would otherwise make DRC + gerbers wrong).
+  drc:
+    enabled: true
+    dont_stop: true            # keep generating gerbers/pdf/render even if DRC errors
+    schematic_parity: false    # board-only import: there is no schematic to compare
+    ignore_unconnected: true   # Altium net info doesn't import (gitlab #15584) -> nets=0
+    format: [HTML, RPT, JSON]  # JSON is read by scripts/drc_gate.py for the gate count
+    dir: drc
+    # Suppress CONFIRMED Altium-import artifacts (Phase 0/2 histogram). Each is noise
+    # because board design rules + net-class membership don't import (DESIGN.md §11),
+    # so every clearance/width/drill check fires against KiCad defaults. We filter by
+    # exact violation `error` id only — never broad regex — so genuine/new types stay
+    # visible. NOT filtered: tracks_crossing (real geometry) and all warning severities.
+    filters:
+      - filter: "Altium import: clearances use KiCad defaults (net-class not imported, gitlab #15584)"
+        error: clearance
+        change_to: ignore
+      - filter: "Altium import: board min track width not imported (gitlab #15584)"
+        error: track_width
+        change_to: ignore
+      - filter: "Altium import: hole/drill size vs un-imported board constraint"
+        error: drill_out_of_range
+        change_to: ignore
+      - filter: "Altium import: hole clearance vs un-imported board constraint"
+        error: hole_clearance
+        change_to: ignore
+      - filter: "Altium import: annular ring vs un-imported board constraint"
+        error: annular_width
+        change_to: ignore
+      - filter: "Altium import: via diameter vs un-imported board constraint"
+        error: via_diameter
+        change_to: ignore
+      - filter: "Altium import: copper-to-edge clearance vs un-imported board constraint"
+        error: copper_edge_clearance
+        change_to: ignore
+      - filter: "Altium import: solder-mask bridge from lost net connectivity (nets=0)"
+        error: solder_mask_bridge
+        change_to: ignore
+      - filter: "Altium import: zone refill thermal-spoke artifact"
+        error: starved_thermal
+        change_to: ignore
+      - filter: "Altium import: unresolved Altium text variable"
+        error: unresolved_variable
+        change_to: ignore
+  # run_erc: omitted — requires a schematic (no headless .SchDoc import).
+
+outputs:
+  # --- Fabrication package -------------------------------------------------
+  - name: gerbers
+    comment: "Gerber plot files"
+    type: gerber
+    dir: fab/gerbers
+
+  - name: drill
+    comment: "Excellon drill files"
+    type: excellon
+    dir: fab/gerbers
+
+  - name: position
+    comment: "Pick-and-place / position file"
+    type: position
+    dir: fab/assembly
+    options:
+      format: CSV
+      units: millimeters
+
+  # --- Documentation / review --------------------------------------------
+  - name: pcb_pdf
+    comment: "PCB layer plots (PDF)"
+    type: pdf
+    dir: docs
+
+  # Phase 0 finding: KiBot's render_3d wraps KiAuto's pcbnew_do GUI driver, which
+  # fails on KiCad 10 (`pcbnew_do returned 1`, KiBot W143) even with the -full image's
+  # 3D models present. Disabled by default until Phase 2 swaps in a working render
+  # path (native `kicad-cli pcb render`, or `blender_export` on the -full image).
+  # Renders are best-effort and never a gate (DESIGN.md §5, §11, §12).
+  - name: render_3d
+    comment: "3D board render (PNG) for the PR comment"
+    type: render_3d
+    dir: docs
+    run_by_default: false
+    options:
+      ray_tracing: true
+      width: 1600
+      height: 1200
+
+  # NOTE: no KiBot 'bom' output here — KiBot's bom is SCHEMATIC-derived
+  # (loads components from the schematic, not the board), so it can't run on a
+  # board-only import. The board BOM is derived by scripts/pcb_bom.py instead and
+  # cross-checked against the Altium BOM in entrypoint.sh.
+
+  # --- Visual diff (base vs head) -----------------------------------------
+  # Wired by entrypoint in Phase 3 (needs the PR base git ref). Off by default
+  # so the core run stays green until that plumbing lands.
+  - name: pcb_diff
+    comment: "Visual PCB diff vs the PR base"
+    type: diff
+    dir: diff
+    run_by_default: false   # entrypoint runs it explicitly, only on PRs with a base board
+    options:
+      # KiCad files are EPHEMERAL (regenerated each run, never committed), so we can't
+      # git-diff them — only the Altium .PcbDoc is in history. So scripts/pcb_diff.sh
+      # converts the base revision's .PcbDoc to a .kicad_pcb and sed-substitutes its path
+      # for the KITIUM_DIFF_OLD_PATH placeholder below into a temp config (KiBot does NOT
+      # expand ${ENV} here). 'new_type: current' diffs against the -b board.
+      old_type: file
+      old: "KITIUM_DIFF_OLD_PATH"
+      new_type: current
+      diff_mode: red_green   # added = green, removed = red
+      cache_dir: .kibot-diff-cache

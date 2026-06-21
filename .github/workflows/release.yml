@@ -1,0 +1,52 @@
+# Build the Kitium container once per release and push it to GHCR, so the
+# Docker action (action.yml -> image: docker://ghcr.io/cimos/kitium:<tag>) just
+# PULLS a prebuilt image instead of rebuilding ~1GB on every consumer run.
+name: release
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch: {}   # allow a manual first publish
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      # Third-party Actions are SHA-pinned (audited; official GitHub/Docker orgs)
+      # so a re-tagged or compromised release can't silently change CI behavior.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: ghcr.io/cimos/kitium
+          # metadata-action SUPPRESSES {{major}} for 0.x versions, so the floating
+          # ":0" tag that action.yml pins would never be published. Publish it
+          # explicitly with type=raw while pre-1.0. Remove `type=raw,value=0` at
+          # v1.0.0 — from then on {{major}} emits ":1".
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=0
+            type=raw,value=dev,enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

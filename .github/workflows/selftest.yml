@@ -1,0 +1,109 @@
+# Kitium's own CI: static checks on the scripts/configs, plus an end-to-end gate
+# that builds the container and runs the real pipeline on a downloaded Altium
+# fixture (KiCad's GPLv3 importer test data — fetched on demand, never vendored).
+name: selftest
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: static checks only need to read the repo.
+permissions:
+  contents: read
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      # SHA-pinned (audited; official actions org) against tag re-mapping.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: ShellCheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck scripts/*.sh
+
+      - name: Python compile
+        run: python3 -m py_compile scripts/*.py
+
+      - name: Pre-flight guard test (pcb_inspect)
+        run: |
+          mkdir -p /tmp/p
+          printf '(kicad_pcb (footprint "R" (property "Reference" "R1"))(segment))\n' > /tmp/p/good.kicad_pcb
+          python3 scripts/pcb_inspect.py /tmp/p/good.kicad_pcb --assert
+          printf '(kicad_pcb (footprint "X" (property "Reference" "UNK")))\n' > /tmp/p/unk.kicad_pcb
+          if python3 scripts/pcb_inspect.py /tmp/p/unk.kicad_pcb --assert; then
+            echo "expected all-UNK board to fail the guard"; exit 1
+          fi
+          printf '(kicad_pcb)\n' > /tmp/p/empty.kicad_pcb
+          if python3 scripts/pcb_inspect.py /tmp/p/empty.kicad_pcb --assert; then
+            echo "expected empty board to fail the guard"; exit 1
+          fi
+
+      - name: Board BOM extraction test (pcb_bom)
+        run: |
+          mkdir -p /tmp/b
+          printf '(kicad_pcb (footprint "R_0402" (property "Reference" "R1")(property "Value" "10k")))\n' > /tmp/b/x.kicad_pcb
+          python3 scripts/pcb_bom.py /tmp/b/x.kicad_pcb --out /tmp/b/bom.csv
+          grep -q 'R1,10k,R_0402' /tmp/b/bom.csv
+
+      - name: BOM cross-check smoke test
+        run: |
+          mkdir -p /tmp/t
+          printf 'Designator,Comment,Quantity\nR1,10k,1\nR2,10k,1\nC1,100nF,1\n' > /tmp/t/altium.csv
+          printf 'Reference,Value,Quantity\nR1,10k,1\nC1,100nF,1\n'              > /tmp/t/kicad.csv
+          python3 scripts/bom_crosscheck.py \
+            --kicad-bom /tmp/t/kicad.csv --altium-bom /tmp/t/altium.csv \
+            --out /tmp/t/diff.md
+          grep -q "Missing in KiCad" /tmp/t/diff.md
+          grep -q 'R2' /tmp/t/diff.md   # R2 was dropped -> must be flagged
+
+      - name: Validate YAML
+        run: |
+          python3 - <<'PY'
+          import sys, glob
+          try:
+              import yaml
+          except ImportError:
+              import subprocess
+              subprocess.check_call([sys.executable, "-m", "pip", "install", "pyyaml"])
+              import yaml
+          for f in glob.glob("kibot/*.yaml") + glob.glob("examples/*.yml") + ["action.yml"]:
+              with open(f) as fh:
+                  yaml.safe_load(fh)
+              print("ok:", f)
+          PY
+
+  end-to-end:
+    name: end-to-end gate (real Altium fixture)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # `make gate` = fetch KiCad's Altium importer fixtures (fetch_fixtures.sh,
+      # GPLv3, downloaded on demand — never vendored) -> build the KiCad-10
+      # container -> run the real entrypoint (convert -> KiBot -> DRC gate ->
+      # render -> board BOM -> report) in DRC=report mode. Exits non-zero on a
+      # conversion/pre-flight failure, so a green run proves the pipeline works.
+      - name: Build image, fetch fixture, run the gate
+        run: make gate
+
+      - name: Assert the gate produced a populated datapack
+        run: |
+          set -euo pipefail
+          out=fixtures/kitium-out
+          test -d "$out" || { echo "missing output dir: $out"; exit 1; }
+          echo "--- output files ---"; find "$out" -type f | sort | head -60
+          n=$(find "$out" -type f | wc -l)
+          echo "produced $n output file(s)"
+          [ "$n" -ge 5 ] || { echo "expected a populated datapack (>=5 files), got $n"; exit 1; }
+          echo "e2e gate OK"
+
+      - name: Upload gate output (diagnostics)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-kitium-out
+          path: fixtures/kitium-out/
+          if-no-files-found: warn
+          retention-days: 7

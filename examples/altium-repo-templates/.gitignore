@@ -1,0 +1,11 @@
+# Altium-generated junk that should never be committed (subset of the canonical
+# github/gitignore community/AltiumDesigner.gitignore). Keep the design source +
+# the OutputJob-exported BOM/gerbers you want Kitium to validate against.
+History/
+__Previews/
+Project Outputs*/
+*.SchDocPreview
+*.PcbDocPreview
+*.$$$
+*.~*
+*.PrjPcbStructure

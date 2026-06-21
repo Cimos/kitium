@@ -1,0 +1,59 @@
+# Fork-safe Kitium gate — workflow 1 of 2 (the ANALYSIS half).
+# Drop BOTH files into your hardware repo:
+#   .github/workflows/pcb-gate.yml          <- this file
+#   .github/workflows/pcb-gate-comment.yml  <- examples/consumer-comment-workflow.yml
+#
+# Why two workflows: a pull_request from a fork gets a READ-ONLY token, so it
+# can't post a PR comment. This job runs with `contents: read` only (safe for
+# fork PRs — no secrets, no write) and just uploads the report as an artifact.
+# The companion workflow_run job posts the comment with `pull-requests: write`.
+name: PCB Gate
+on:
+  pull_request:
+    paths:
+      - "**/*.PcbDoc"
+      - "**/*.SchDoc"
+      - "**/*.PrjPcb"
+
+# Least privilege: this job only reads the repo. No pull-requests:write here —
+# the comment is posted by the companion workflow.
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      # If your repo tracks the Altium binaries in Git LFS, you MUST materialize
+      # them — a plain checkout leaves pointer files that kicad-cli can't read.
+      # Actions are SHA-pinned (audit any third-party action before adopting, then
+      # pin by full commit SHA so a re-tagged release can't change CI behavior).
+      - uses: nschloe/action-cached-lfs-checkout@385a8ecc719e50b8c71af6ab01a624b486b7c3bc # v1.2.5
+        with:
+          fetch-depth: 0          # visual diff needs git history
+      # Non-LFS alternative:
+      # - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      #   with: { fetch-depth: 0 }
+
+      - name: Run Kitium (analysis only — no token, no comment)
+        uses: Cimos/kitium@v0.1.0      # pin a concrete tag for reproducibility
+        with:
+          # Auto-detected if omitted; set explicitly when layout varies:
+          project: hardware/MyBoard.PrjPcb
+          bom_csv: hardware/MyBoard_BOM.csv   # exported by your Altium OutputJob
+          drc: report                          # report | block
+          # NOTE: no github_token here — commenting happens in the companion.
+
+      - name: Save PR number for the comment workflow
+        if: always()
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: echo "$PR_NUMBER" > kitium-out/pr-number.txt
+
+      - name: Upload report + outputs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kitium-out
+          path: kitium-out/
+          retention-days: 7

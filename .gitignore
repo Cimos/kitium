@@ -1,0 +1,29 @@
+# Test fixtures are downloaded on demand (GPLv3 — not vendored). See scripts/fetch_fixtures.sh
+fixtures/
+
+# Kitium CI build products (KiCad files are ephemeral — never committed)
+build/
+out/
+*.kicad_pcb
+*.kicad_sch
+*.kicad_pro
+*-backups/
+fp-info-cache
+
+# KiBot / KiCad noise
+*.bak
+_autosave-*
+sym-lib-table
+fp-lib-table
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp

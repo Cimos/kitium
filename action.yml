@@ -1,0 +1,58 @@
+name: "Kitium"
+description: "Convert an Altium PCB project to KiCad and validate it (DRC, gerbers, renders, BOM cross-check) on every PR."
+branding:
+  icon: "check-circle"
+  color: "blue"
+
+inputs:
+  project:
+    description: "Path to the Altium project (.PrjPcb) or a directory containing it. If empty, Kitium auto-detects by convention."
+    required: false
+    default: ""
+  boards_glob:
+    description: "Glob for .PcbDoc files to convert, relative to the repo root. Overrides project-based discovery when set."
+    required: false
+    default: ""
+  bom_csv:
+    description: "Path to an Altium-exported BOM CSV to cross-check the converted board against. Skips the cross-check if empty."
+    required: false
+    default: ""
+  drc:
+    description: "DRC gate mode: 'report' (never blocks) or 'block' (fails the job on DRC errors)."
+    required: false
+    default: "report"
+  output_dir:
+    description: "Directory for generated artifacts (gerbers, renders, reports)."
+    required: false
+    default: "kitium-out"
+  github_token:
+    description: "Token for posting the sticky PR comment. Pass the workflow's GITHUB_TOKEN secret; commenting is skipped if empty."
+    required: false
+    default: ""
+  mode:
+    description: "'gate' (default): convert + validate + report. 'comment': only post a pre-generated report to a PR (used by the fork-safe companion workflow)."
+    required: false
+    default: "gate"
+  report_file:
+    description: "comment mode only: path to the report Markdown to post (default: <output_dir>/kitium-report.md)."
+    required: false
+    default: ""
+  pr_number:
+    description: "comment mode only: PR number to comment on (the workflow_run companion has no pull_request event to read it from)."
+    required: false
+    default: ""
+
+outputs:
+  report:
+    # Docker actions must NOT set 'value:' (that's composite-action syntax). The
+    # runner maps this from what the container writes to $GITHUB_OUTPUT.
+    description: "Path to the generated Markdown summary report."
+
+runs:
+  using: "docker"
+  # Reference a PREBUILT image (published to GHCR by .github/workflows/release.yml),
+  # NOT "Dockerfile" — a Dockerfile action rebuilds the ~1GB image on every run
+  # because GitHub runners are ephemeral with no layer cache. The image must exist
+  # in GHCR before this action is first used (it's published on a version-tag push).
+  image: "docker://ghcr.io/cimos/kitium:0"
+# Inputs are passed to the container as INPUT_<UPPERCASE_NAME> env vars automatically.
