@@ -78,6 +78,21 @@ def test_embed_images_noop_without_images():
     assert pc.embed_images(body, "/tmp", "o/r", "tok", 7) == body
 
 
+def test_embed_images_rejects_untrusted_paths():
+    # Report can come from a forked PR; traversal / absolute / non-image must never upload.
+    pc._ensure_assets_branch = lambda repo, token: True
+    uploaded = []
+
+    def _spy(repo, token, dest, local):
+        uploaded.append(local)
+        return "https://h/x.png"
+
+    for bad in ("../../etc/passwd", "/etc/passwd", "..\\..\\secret.png", "secrets.env"):
+        out = pc.embed_images(f"![e]({bad})", "/tmp/base", "o/r", "tok", 7, uploader=_spy)
+        assert "rejected" in out, (bad, out)
+    assert uploaded == [], uploaded  # nothing was ever read/uploaded
+
+
 if __name__ == "__main__":
     test_pr_number_none_without_event()
     test_pr_number_reads_event_payload()
@@ -86,4 +101,5 @@ if __name__ == "__main__":
     test_embed_images_rewrites_local_to_hosted()
     test_embed_images_missing_file_degrades_gracefully()
     test_embed_images_noop_without_images()
+    test_embed_images_rejects_untrusted_paths()
     print("OK: post_comment tests passed")

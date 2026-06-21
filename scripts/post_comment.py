@@ -99,9 +99,22 @@ def embed_images(body, base_dir, repo, token, pr, uploader=_upload_image):
         print(f"[kitium] WARN: could not prepare assets branch: {e}", file=sys.stderr)
         return _IMG.sub(lambda m: f"_{m.group(1)} (image in run artifacts)_", body)
 
+    base_real = os.path.realpath(base_dir)
+    allowed_ext = (".png", ".jpg", ".jpeg", ".svg")
+
     def _sub(m):
         alt, rel = m.group(1), m.group(2).strip()
-        local = os.path.join(base_dir, rel)
+        # The report can come from a forked PR (fork-safe flow), so its image paths are
+        # UNTRUSTED and this runs with a write token. Reject absolute paths, backslashes,
+        # any '..' segment, and non-image extensions; then confirm the resolved path stays
+        # inside base_dir. Otherwise a crafted report could read/exfiltrate arbitrary files.
+        if rel.startswith("/") or "\\" in rel or ".." in rel.split("/"):
+            return f"_{alt} (image path rejected)_"
+        if not rel.lower().endswith(allowed_ext):
+            return f"_{alt} (image type rejected)_"
+        local = os.path.realpath(os.path.join(base_dir, rel))
+        if local != base_real and not local.startswith(base_real + os.sep):
+            return f"_{alt} (image path rejected)_"
         if not os.path.isfile(local):
             return f"_{alt} (image not found)_"
         dest = f"pr-{pr}/{re.sub(r'[^A-Za-z0-9._-]', '_', rel)}"
