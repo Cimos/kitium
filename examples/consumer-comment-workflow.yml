@@ -14,7 +14,7 @@ on:
     types: [completed]
 
 permissions:
-  contents: read
+  contents: write          # host comment images on the kitium-bot-assets branch
   actions: read            # to download artifacts from the triggering run
   pull-requests: write     # to post the comment (no third-party code runs here)
 
