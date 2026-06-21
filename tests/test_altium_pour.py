@@ -12,9 +12,10 @@ _spec.loader.exec_module(ap)
 
 
 def _shape_geo(verts):
-    """Build a ShapeBasedRegions6 vertex blob: int32 N, then (straight) 37-byte verts."""
+    """Build a ShapeBasedRegions6 outer ring: header N=len(verts), then N+1 37-byte verts
+    (the last duplicates the first, matching Altium's closed-ring convention)."""
     out = struct.pack("<I", len(verts))
-    for x_mil, y_mil in verts:
+    for x_mil, y_mil in list(verts) + [verts[0]]:
         out += bytes([0])                                   # straight-segment flag
         out += struct.pack("<i", int(x_mil * 10000))        # x in 1/10000 mil
         out += struct.pack("<i", int(y_mil * 10000))        # y
@@ -39,48 +40,53 @@ def test_mil():
     assert ap._mil("") == 0.0
 
 
-def test_verts_shape_decodes_and_no_arc():
-    geo = _shape_geo([(1000.0, 1005.0), (3105.0, 1005.0), (3105.0, 1885.0)])
-    pts, had_arc = ap._verts_shape(geo)
-    assert had_arc is False
-    assert len(pts) == 3
-    assert abs(pts[0][0] - 1000.0 * 0.0254) < 1e-6   # mm
-    assert abs(pts[1][0] - 3105.0 * 0.0254) < 1e-6
+def _hole_doubles(pts):
+    out = struct.pack("<I", len(pts))
+    for x_mil, y_mil in pts:
+        out += struct.pack("<dd", x_mil * 10000, y_mil * 10000)   # 1/10000 mil doubles
+    return out
 
 
-def test_verts_shape_flags_arc():
+def test_shape_record_outer_no_arc():
+    # _shape_geo appends the closing dup; _shape_record reads N and drops it
+    geo = _shape_geo([(1000.0, 1005.0), (3105.0, 1005.0), (3105.0, 1885.0), (1000.0, 1885.0)])
+    outer, holes, had_arc = ap._shape_record(geo, 0)
+    assert had_arc is False and holes == []
+    assert len(outer) == 4
+    assert abs(outer[0][0] - 1000.0 * 0.0254) < 1e-6   # mm
+
+
+def test_shape_record_flags_arc():
     geo = bytearray(_shape_geo([(1.0, 1.0), (2.0, 2.0)]))
-    geo[4] = 0x01            # set the segment flag on the first vertex
-    _, had_arc = ap._verts_shape(bytes(geo))
+    geo[4] = 0x01            # segment flag on the first vertex
+    _, _, had_arc = ap._shape_record(bytes(geo), 0)
     assert had_arc is True
 
 
-def test_verts_region_doubles():
+def test_shape_record_subtracts_hole():
+    geo = _shape_geo([(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)])      # triangle ring (N=3)
+    geo += _hole_doubles([(10.0, 10.0), (20.0, 10.0), (20.0, 20.0)])  # one void
+    outer, holes, _ = ap._shape_record(geo, 1)
+    assert len(outer) == 3
+    assert len(holes) == 1 and len(holes[0]) == 3
+    assert abs(holes[0][0][0] - 10.0 * 0.0254) < 1e-6
+
+
+def test_region_record_doubles():
     geo = struct.pack("<I", 2) + struct.pack("<dd", 27500000.0, 10050000.0) \
         + struct.pack("<dd", 31000000.0, 10050000.0)
-    pts, had_arc = ap._verts_region(geo)
-    assert had_arc is False
-    assert abs(pts[0][0] - 2750.0 * 0.0254) < 1e-6   # 27500000/10000 mil -> mm
+    outer, holes, had_arc = ap._region_record(geo, 0)
+    assert had_arc is False and holes == []
+    assert abs(outer[0][0] - 2750.0 * 0.0254) < 1e-6   # 27500000/10000 mil -> mm
 
 
-def test_records_framing_and_region_grouping():
+def test_records_framing():
     geo = _shape_geo([(0, 0), (10, 0), (10, 10), (0, 10)])
     prop = "|V7_LAYER=TOP|NAME= |KIND=0|SUBPOLYINDEX=0|"
-    data = _record(_body(net=-1, poly=1, prop=prop, geo=geo)) * 2  # two regions, same poly
-    # feed through the grouping logic the way parse_regions does
-    groups = {}
-    for body in ap._records(data):
-        poly_idx = struct.unpack_from("<h", body, 5)[0]
-        proplen = struct.unpack_from("<I", body, 18)[0]
-        p = body[22:22 + proplen].decode("latin-1")
-        import re
-        d = dict(re.findall(r"([A-Z0-9_]+)=([^|]*)", p))
-        pts, _ = ap._verts_shape(body[22 + proplen:])
-        g = groups.setdefault(poly_idx, {"layer": d.get("V7_LAYER"), "polys": []})
-        g["polys"].append(pts)
-    assert list(groups) == [1]
-    assert groups[1]["layer"] == "TOP"
-    assert len(groups[1]["polys"]) == 2
+    data = _record(_body(net=-1, poly=1, prop=prop, geo=geo)) * 2
+    bodies = list(ap._records(data))
+    assert len(bodies) == 2
+    assert struct.unpack_from("<h", bodies[0], 5)[0] == 1   # poly index
 
 
 if __name__ == "__main__":

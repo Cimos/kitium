@@ -93,10 +93,26 @@ def _records(data):
         off += 5 + blen
 
 
-def _verts_shape(geo):
-    """37-byte vertex array: flag@+0, int32 x@+1, int32 y@+5. Returns [(mm,mm)], had_arc."""
+def _read_doubles_contour(geo, off):
+    """[uint32 n][n × (double x, double y)] in 1/10000 mil. Returns (pts, next_off)."""
+    n = struct.unpack_from("<I", geo, off)[0]
+    off += 4
+    pts = []
+    for _ in range(n):
+        if off + 16 > len(geo):
+            break
+        x, y = struct.unpack_from("<dd", geo, off)
+        pts.append((x * RAW_TO_MM, y * RAW_TO_MM))
+        off += 16
+    return pts, off
+
+
+def _shape_record(geo, hole_count):
+    """ShapeBasedRegions6 region: a 37-byte-vertex outer ring (N+1, closed) followed by
+    `hole_count` void contours stored as 16-byte double vertices. Returns (outer, holes,
+    had_arc). Voids MUST be subtracted or the pour fills solid over the traces."""
     n = struct.unpack_from("<I", geo, 0)[0]
-    pts, had_arc = [], False
+    outer, had_arc = [], False
     for i in range(n):
         base = 4 + i * 37
         if base + 9 > len(geo):
@@ -105,21 +121,29 @@ def _verts_shape(geo):
             had_arc = True
         x = struct.unpack_from("<i", geo, base + 1)[0] * RAW_TO_MM
         y = struct.unpack_from("<i", geo, base + 5)[0] * RAW_TO_MM
-        pts.append((x, y))
-    return pts, had_arc
-
-
-def _verts_region(geo):
-    """16-byte double vertex array (Regions6). Returns [(mm,mm)], had_arc=False."""
-    n = struct.unpack_from("<I", geo, 0)[0]
-    pts = []
-    for i in range(n):
-        base = 4 + i * 16
-        if base + 16 > len(geo):
+        outer.append((x, y))
+    holes = []
+    off = 4 + (n + 1) * 37   # skip the closing duplicate vertex
+    for _ in range(max(0, hole_count)):
+        if off + 4 > len(geo):
             break
-        x, y = struct.unpack_from("<dd", geo, base)
-        pts.append((x * RAW_TO_MM, y * RAW_TO_MM))
-    return pts, False
+        hpts, off = _read_doubles_contour(geo, off)
+        if len(hpts) >= 3:
+            holes.append(hpts)
+    return outer, holes, had_arc
+
+
+def _region_record(geo, hole_count):
+    """Regions6 (older): 16-byte double outer ring, then `hole_count` double contours."""
+    outer, off = _read_doubles_contour(geo, 0)
+    holes = []
+    for _ in range(max(0, hole_count)):
+        if off + 4 > len(geo):
+            break
+        hpts, off = _read_doubles_contour(geo, off)
+        if len(hpts) >= 3:
+            holes.append(hpts)
+    return outer, holes, False
 
 
 def _is_copper_layer(name) -> bool:
@@ -131,10 +155,12 @@ def _is_copper_layer(name) -> bool:
 def parse_regions(ole) -> dict:
     """Poured-copper regions grouped by parent polygon index. Prefers ShapeBasedRegions6.
 
-    Regions carry net=-1; the net comes via the parent polygon (poly index at body+5).
-    Returns {"groups": {poly_idx: {"layer": str, "polys": [[(mm,mm),...]]}}, "had_arc", "source"}.
+    Regions carry net=-1; the net comes via the parent polygon (poly index at body+5). Each
+    region is an outer ring plus zero or more void contours (count at body offset 14) which
+    must be subtracted. Returns {"groups": {poly_idx: {"layer", "shapes": [(outer, holes)]}},
+    "had_arc", "source"}.
     """
-    for stream, decode in (("ShapeBasedRegions6", _verts_shape), ("Regions6", _verts_region)):
+    for stream, decode in (("ShapeBasedRegions6", _shape_record), ("Regions6", _region_record)):
         data = _read(ole, stream)
         if not data:
             continue
@@ -143,6 +169,7 @@ def parse_regions(ole) -> dict:
             if len(body) < 22:
                 continue
             poly_idx = struct.unpack_from("<h", body, 5)[0]
+            hole_count = struct.unpack_from("<h", body, 14)[0]
             proplen = struct.unpack_from("<I", body, 18)[0]
             prop = body[22:22 + proplen].decode("latin-1", "replace")
             d = dict(re.findall(r"([A-Z0-9_]+)=([^|]*)", prop))
@@ -154,11 +181,11 @@ def parse_regions(ole) -> dict:
             geo = body[22 + proplen:]
             if len(geo) < 4:
                 continue
-            pts, arc = decode(geo)
+            outer, holes, arc = decode(geo, hole_count)
             had_arc = had_arc or arc
-            if len(pts) >= 3:
-                g = groups.setdefault(poly_idx, {"layer": layer, "polys": []})
-                g["polys"].append(pts)
+            if len(outer) >= 3:
+                g = groups.setdefault(poly_idx, {"layer": layer, "shapes": []})
+                g["shapes"].append((outer, holes))
         if groups:
             return {"groups": groups, "had_arc": had_arc, "source": stream}
     return {"groups": {}, "had_arc": False, "source": None}
@@ -217,19 +244,26 @@ def apply_to_board(kicad_pcb, data) -> bool:
         zone = _zone_on_layer_net(b, layer_id, net_name)
         if zone is None:
             continue
-        sps = pcbnew.SHAPE_POLY_SET()
-        for poly in g["polys"]:
-            chain = pcbnew.SHAPE_LINE_CHAIN()
+        def _chain(poly):
+            c = pcbnew.SHAPE_LINE_CHAIN()
             for xy in poly:
                 p = to_nm(xy)
-                chain.Append(p.x, p.y)
-            chain.SetClosed(True)
-            sps.AddOutline(chain)
+                c.Append(p.x, p.y)
+            c.SetClosed(True)
+            return c
+
+        sps = pcbnew.SHAPE_POLY_SET()
+        nholes = 0
+        for outer, holes in g["shapes"]:
+            idx = sps.AddOutline(_chain(outer))
+            for hole in holes:                      # subtract voids — else the pour fills solid
+                sps.AddHole(_chain(hole), idx)
+                nholes += 1
         zone.SetFilledPolysList(zone.GetLayer(), sps)
         zone.SetIsFilled(True)
         applied += 1
         print(f"[kitium] altium_pour: {g['layer']}/{net_name or '<no-net>'} -> "
-              f"{len(g['polys'])} region(s) injected as locked fill")
+              f"{len(g['shapes'])} region(s), {nholes} void(s) injected as locked fill")
 
     if applied == 0:
         print("[kitium] altium_pour: no zones matched the poured regions — falling back", file=sys.stderr)
@@ -316,8 +350,9 @@ def main(argv=None) -> int:
             if 0 <= poly_idx < len(data["polygons"]):
                 ni = data["polygons"][poly_idx]["net_idx"]
                 net = data["nets"][ni] if 0 <= ni < len(data["nets"]) else "?"
-            print(f"  poly{poly_idx} {g['layer']}/{net}: {len(g['polys'])} region(s), "
-                  f"verts={[len(p) for p in g['polys']]}")
+            nholes = sum(len(h) for _, h in g["shapes"])
+            print(f"  poly{poly_idx} {g['layer']}/{net}: {len(g['shapes'])} region(s), "
+                  f"{nholes} void(s), outer_verts={[len(o) for o, _ in g['shapes']]}")
 
     if args.apply:
         try:
