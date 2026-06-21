@@ -27,7 +27,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends python3-pip git python3-lxml xvfb \
       librsvg2-bin imagemagick poppler-utils \
  && rm -rf /var/lib/apt/lists/* \
- && pip3 install --no-cache-dir --no-compile --break-system-packages kibot
+ && pip3 install --no-cache-dir --no-compile --break-system-packages kibot olefile
 
 # Scripts otherwise use only the Python 3 stdlib + tools already in the image.
 COPY scripts/ /opt/kitium/scripts/
