@@ -15,6 +15,7 @@ BOARDS_GLOB="${INPUT_BOARDS_GLOB:-}"
 BOM_CSV="${INPUT_BOM_CSV:-}"
 DRC_MODE="${INPUT_DRC:-report}"
 OUT_DIR="${INPUT_OUTPUT_DIR:-kitium-out}"
+MODE="${INPUT_MODE:-gate}"
 
 BUILD_DIR="${OUT_DIR}/build"
 REPORT="${OUT_DIR}/kitium-report.md"
@@ -23,6 +24,18 @@ mkdir -p "${BUILD_DIR}"
 log()  { printf '\033[1;34m[kitium]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[kitium]\033[0m %s\n' "$*" >&2; }
 fail() { printf '\033[1;31m[kitium]\033[0m %s\n' "$*" >&2; exit 1; }
+
+# --- comment mode: post a pre-generated report, nothing else ----------------
+# Used by the fork-safe companion workflow (workflow_run), which runs with a
+# pull-requests:write token but processes no design files. It downloads the
+# report artifact produced by the read-only analysis job and posts it here.
+if [ "${MODE}" = "comment" ]; then
+  report="${INPUT_REPORT_FILE:-${REPORT}}"
+  [ -f "${report}" ] || fail "comment mode: report file not found: ${report}"
+  log "Comment mode: posting ${report} to PR #${INPUT_PR_NUMBER:-(from event)}"
+  KITIUM_PR_NUMBER="${INPUT_PR_NUMBER:-}" python3 "${SCRIPTS}/post_comment.py" "${report}"
+  exit 0
+fi
 
 # Validate the gate switch up front: an unrecognised value (typo like "Block",
 # "blocking") must NOT silently fall through to non-blocking 'report' — that would

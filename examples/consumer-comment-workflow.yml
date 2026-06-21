@@ -1,0 +1,50 @@
+# Fork-safe Kitium gate — workflow 2 of 2 (the COMMENT half).
+# Drop into your hardware repo at .github/workflows/pcb-gate-comment.yml
+# (companion to examples/consumer-workflow.yml).
+#
+# Runs after "PCB Gate" finishes. workflow_run executes in the BASE repo with a
+# writable token even when the triggering PR came from a fork — but it processes
+# NO design files (it only downloads the report artifact and posts it), so the
+# write token never touches untrusted code. workflow_run only fires from the
+# default branch, so this activates once both files are on your main branch.
+name: PCB Gate Comment
+on:
+  workflow_run:
+    workflows: ["PCB Gate"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read            # to download artifacts from the triggering run
+  pull-requests: write     # to post the comment (no third-party code runs here)
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    # Only for PR-triggered runs; post regardless of pass/fail (the report is
+    # useful either way).
+    if: github.event.workflow_run.event == 'pull_request'
+    steps:
+      - name: Download the analysis report
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: kitium-out
+          path: kitium-out
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read & validate the PR number
+        id: pr
+        run: |
+          set -uo pipefail
+          num=$(cat kitium-out/pr-number.txt 2>/dev/null | tr -dc '0-9')
+          [ -n "$num" ] || { echo "no valid PR number in artifact"; exit 1; }
+          echo "number=$num" >> "$GITHUB_OUTPUT"
+
+      - name: Post the sticky PR comment
+        uses: Cimos/kitium@v0      # needs the release that adds `mode: comment`; pin a concrete @v0.x.y
+        with:
+          mode: comment
+          report_file: kitium-out/kitium-report.md
+          pr_number: ${{ steps.pr.outputs.number }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
