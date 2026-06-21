@@ -42,6 +42,7 @@ gate: fixtures image
 test: shellcheck
 	python3 -m py_compile scripts/*.py
 	python3 tests/test_drc_gate.py
+	python3 tests/test_altium_rules.py
 	python3 tests/test_post_comment.py
 	@echo "OK: python compiles + unit tests pass"
 

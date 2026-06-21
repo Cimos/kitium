@@ -87,6 +87,14 @@ for board in "${BOARDS[@]}"; do
   bdir="$(dirname "${board}")"   # per-board dir created by convert.sh
   [ -d "${bdir}" ] || fail "internal: expected per-board directory ${bdir}"
 
+  # Apply the real Altium design rules that kicad-cli drops (pour min copper width,
+  # clearances) BEFORE refilling, so the re-poured copper matches Altium instead of
+  # KiCad's defaults. Reads them from the source .PcbDoc. Best-effort: never gates.
+  if [ -f "${bdir}/.source" ]; then
+    python3 "${SCRIPTS}/altium_rules.py" "$(cat "${bdir}/.source")" --apply "${board}" \
+      --json-out "${bdir}/altium-rules.json" 2>&1 | tee -a "${bdir}/kibot.log" || true
+  fi
+
   # Altium imports zones UNFILLED — refill before any DRC/plot/render. Capture the
   # python rc via PIPESTATUS (tee would otherwise mask it) and warn loudly: silent
   # refill failure means wrong gerbers/DRC, the exact trap we're guarding against.
