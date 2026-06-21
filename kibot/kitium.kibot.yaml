@@ -109,10 +109,15 @@ outputs:
     comment: "Visual PCB diff vs the PR base"
     type: diff
     dir: diff
-    run_by_default: false
+    run_by_default: false   # entrypoint runs it explicitly, only on PRs with a base board
     options:
-      # 'old' = the base ref to compare against (a git ref). entrypoint must inject
-      # the real PR base SHA here in Phase 3. Omit 'new' so it defaults to the
-      # current working-tree board (the literal "current" is NOT a valid value).
-      old: "KIBOT_BASE_REF"   # TODO(phase 3): inject PR base SHA/ref
+      # KiCad files are EPHEMERAL (regenerated each run, never committed), so we can't
+      # git-diff them — only the Altium .PcbDoc is in history. So scripts/pcb_diff.sh
+      # converts the base revision's .PcbDoc to a .kicad_pcb and sed-substitutes its path
+      # for the KITIUM_DIFF_OLD_PATH placeholder below into a temp config (KiBot does NOT
+      # expand ${ENV} here). 'new_type: current' diffs against the -b board.
+      old_type: file
+      old: "KITIUM_DIFF_OLD_PATH"
+      new_type: current
+      diff_mode: red_green   # added = green, removed = red
       cache_dir: .kibot-diff-cache

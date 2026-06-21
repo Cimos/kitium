@@ -20,8 +20,12 @@ USER root
 # --no-compile is REQUIRED: KiBot rewrites its own modules via a macro/plugin
 # system at import time, and pip's pre-compiled .pyc bytecode shadows it, causing
 # "cannot import name 'macros' from 'kibot.macros'" at runtime (KiBot's own advice).
+# librsvg2-bin (rsvg-convert), imagemagick (convert), poppler-utils (pdfunite) are
+# KiDiff's rendering deps — KiBot's `diff` output shells out to kicad-diff.py, which
+# rasterizes board layers and image-diffs them. Without these it fails ("returned 4").
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3-pip git python3-lxml xvfb \
+      librsvg2-bin imagemagick poppler-utils \
  && rm -rf /var/lib/apt/lists/* \
  && pip3 install --no-cache-dir --no-compile --break-system-packages kibot
 
