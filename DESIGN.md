@@ -207,8 +207,8 @@ pull, and local `docker run` + CI use the *identical* artifact.
   --break-system-packages kibot`. Pin an exact patch tag and **avoid 10.0.1** (render/STEP
   regression that drops 3D models, §11). KiAuto/Xvfb (for the later GUI track) get added then.
 
-> ⚠️ The current scaffold's `action.yml` still uses `image: "Dockerfile"` — switch to
-> `docker://` once the first image is published to GHCR.
+> ✅ Resolved: `action.yml` references the prebuilt `docker://ghcr.io/cimos/kitium:0`
+> image (published by `.github/workflows/release.yml`), not `image: "Dockerfile"`.
 
 ## 11. Critical import gotchas (correctness-shaping)
 

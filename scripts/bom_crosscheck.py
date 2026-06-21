@@ -12,8 +12,9 @@ Usage:
     bom_crosscheck.py --kicad-bom kicad.csv --altium-bom altium.csv \
         --out bom-diff.md [--fail-on-mismatch]
 
-STATUS: scaffold. Column auto-detection covers common Altium/KiBot exports;
-confirm against a real Altium BOM CSV in Phase 4 and extend the candidate lists.
+NOTE: column auto-detection covers common Altium/KiBot exports and is unit-tested;
+the Phase 4 follow-up is to confirm it against a real Altium BOM CSV and extend the
+candidate column lists if a project uses non-standard headers.
 """
 from __future__ import annotations
 
