@@ -45,6 +45,7 @@ test: shellcheck
 	python3 -m py_compile scripts/*.py tools/compare/*.py
 	python3 tests/test_drc_gate.py
 	python3 tests/test_altium_rules.py
+	python3 tests/test_altium_pour.py
 	python3 tests/test_post_comment.py
 	python3 tests/test_classify_layers.py
 	@echo "OK: python compiles + unit tests pass"

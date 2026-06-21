@@ -95,14 +95,29 @@ for board in "${BOARDS[@]}"; do
       --json-out "${bdir}/altium-rules.json" 2>&1 | tee -a "${bdir}/kibot.log" || true
   fi
 
-  # Altium imports zones UNFILLED — refill before any DRC/plot/render. Capture the
-  # python rc via PIPESTATUS (tee would otherwise mask it) and warn loudly: silent
-  # refill failure means wrong gerbers/DRC, the exact trap we're guarding against.
-  set +e
-  python3 "${SCRIPTS}/refill_zones.py" "${board}" 2>&1 | tee -a "${bdir}/kibot.log"
-  rfc=${PIPESTATUS[0]}
-  set -e
-  [ "${rfc}" -eq 0 ] || warn "zone refill FAILED for ${name} (rc=${rfc}) — DRC/gerbers/renders may be wrong"
+  # Prefer Altium's OWN poured copper over re-pouring. kicad-cli imports zones unfilled
+  # and KiCad's fill engine diverges from Altium's (connectivity/island decisions), so a
+  # re-pour never matches Altium. altium_pour reads Altium's stored pour from the .PcbDoc
+  # and injects it as each zone's locked fill. Exit 0 = imported (skip re-pour); exit 3 =
+  # nothing to import / couldn't, so fall through to the re-pour below. Best-effort.
+  pour_imported=0
+  if [ -f "${bdir}/.source" ]; then
+    set +e
+    python3 "${SCRIPTS}/altium_pour.py" "$(cat "${bdir}/.source")" --apply "${board}" 2>&1 | tee -a "${bdir}/kibot.log"
+    [ "${PIPESTATUS[0]}" -eq 0 ] && pour_imported=1
+    set -e
+  fi
+
+  # Altium imports zones UNFILLED — re-pour before any DRC/plot/render (unless we imported
+  # Altium's pour above). Capture the python rc via PIPESTATUS (tee would otherwise mask
+  # it) and warn loudly: silent refill failure means wrong gerbers/DRC, the trap we guard.
+  if [ "${pour_imported}" -eq 0 ]; then
+    set +e
+    python3 "${SCRIPTS}/refill_zones.py" "${board}" 2>&1 | tee -a "${bdir}/kibot.log"
+    rfc=${PIPESTATUS[0]}
+    set -e
+    [ "${rfc}" -eq 0 ] || warn "zone refill FAILED for ${name} (rc=${rfc}) — DRC/gerbers/renders may be wrong"
+  fi
 
   # Pre-flight guard: empty board / all-UNK refs are silent-import traps. Fail loud.
   log "Inspecting ${name}"
