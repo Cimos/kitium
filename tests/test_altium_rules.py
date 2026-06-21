@@ -28,11 +28,13 @@ def test_parse_polygons_takes_tightest_min_width():
 
 def test_parse_rules_clearance_and_width():
     text = ("|SELECTION=FALSE|RULEKIND=Clearance|NAME=Clearance|GAP=10mil|ENABLED=TRUE"
-            "|SELECTION=FALSE|RULEKIND=Width|NAME=Width|MINLIMIT=6mil|MAXLIMIT=20mil")
+            "|SELECTION=FALSE|RULEKIND=Width|NAME=Width|MINLIMIT=6mil|MAXLIMIT=20mil"
+            "|SELECTION=FALSE|RULEKIND=PolygonConnect|NAME=PC|CONNECTSTYLE=Direct|RELIEFENTRIES=4")
     r = ar.parse_rules(text)
     assert "Clearance" in r["kinds"] and "Width" in r["kinds"]
     assert abs(r["min_clearance_mm"] - 0.254) < 1e-6     # 10 mil
     assert abs(r["min_track_width_mm"] - 0.1524) < 1e-6  # 6 mil
+    assert r["pad_connect"] == "Direct"
 
 
 def test_parse_rules_empty():

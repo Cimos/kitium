@@ -74,7 +74,10 @@ def parse_rules(text: str) -> dict:
         w = _to_mm(r.get("MINLIMIT") or r.get("PREFEREDWIDTH") or "")  # note: one-R, Altium's spelling
         if w is not None:
             width = w if width is None else min(width, w)
-    return {"kinds": sorted(by_kind), "min_clearance_mm": clearance, "min_track_width_mm": width}
+    pad_connect = next((r.get("CONNECTSTYLE") for r in by_kind.get("PolygonConnect", [])
+                        if r.get("CONNECTSTYLE")), None)
+    return {"kinds": sorted(by_kind), "min_clearance_mm": clearance,
+            "min_track_width_mm": width, "pad_connect": pad_connect}
 
 
 def extract(pcbdoc_path: str) -> dict:
@@ -101,6 +104,18 @@ def apply_to_board(kicad_pcb: str, data: dict) -> None:
         for z in b.Zones():
             z.SetMinThickness(pcbnew.FromMM(pour))
         print(f"[kitium] set zone min_thickness = {pour:.4f}mm (Altium MINPRIMLENGTH)")
+    pc = data["rules"].get("pad_connect")
+    if pc:
+        try:
+            mode = {"Direct": pcbnew.ZONE_CONNECTION_FULL,
+                    "Relief": pcbnew.ZONE_CONNECTION_THERMAL,
+                    "NoConnect": pcbnew.ZONE_CONNECTION_NONE}.get(pc)
+            if mode is not None:
+                for z in b.Zones():
+                    z.SetPadConnection(mode)
+                print(f"[kitium] set zone pad connection = {pc} (Altium PolygonConnect)")
+        except Exception:  # noqa: BLE001 — pad-connection API varies by KiCad version
+            pass
     rd = data["polygons"].get("remove_dead_copper")
     if rd is not None:
         try:
