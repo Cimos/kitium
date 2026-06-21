@@ -170,9 +170,19 @@ for board in "${BOARDS[@]}"; do
     elif [ -f "${bdir}/drc-summary.txt" ]; then
       echo "- DRC (post-filter): $(head -1 "${bdir}/drc-summary.txt")"
     fi
+    # Images referenced by LOCAL path (relative to this report's dir). On a PR,
+    # post_comment.py uploads them and rewrites the link to a hosted URL so they show
+    # inline; off-PR / if hosting fails they degrade to a plain note.
+    if [ -f "${bdir}/out/docs/${name}-3d.png" ]; then
+      echo
+      echo "![3D render: ${name}](build/${name}/out/docs/${name}-3d.png)"
+    fi
     if [ -d "${bdir}/out/diff" ]; then
-      diff_pdf="$(find "${bdir}/out/diff" -name '*.pdf' 2>/dev/null | sort | head -1)"
-      [ -n "${diff_pdf}" ] && echo "- Visual diff vs PR base: \`${diff_pdf}\` (PNG rendered alongside)"
+      dpng="$(find "${bdir}/out/diff" -name '*.png' 2>/dev/null | sort | head -1)"
+      if [ -n "${dpng}" ]; then
+        echo
+        echo "![Board diff vs PR base: ${name}](build/${name}/out/diff/$(basename "${dpng}"))"
+      fi
     fi
     if [ -f "${bdir}/metrics.json" ]; then
       echo "<details><summary>Metrics</summary>"

@@ -56,9 +56,34 @@ def test_main_usage_error_without_args():
     assert pc.main([]) == 1
 
 
+def test_embed_images_rewrites_local_to_hosted():
+    pc._ensure_assets_branch = lambda repo, token: True  # don't hit the API
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "diff.png"), "wb") as fh:
+            fh.write(b"\x89PNG\r\n")
+        out = pc.embed_images("look ![Board diff](diff.png) done", d, "o/r", "tok", 7,
+                              uploader=lambda repo, token, dest, local: "https://h/x.png")
+    assert "![Board diff](https://h/x.png)" in out, out
+
+
+def test_embed_images_missing_file_degrades_gracefully():
+    pc._ensure_assets_branch = lambda repo, token: True
+    out = pc.embed_images("![X](nope.png)", "/tmp", "o/r", "tok", 7,
+                          uploader=lambda *a: "unused")
+    assert "image not found" in out and "![X]" not in out, out
+
+
+def test_embed_images_noop_without_images():
+    body = "no images here"
+    assert pc.embed_images(body, "/tmp", "o/r", "tok", 7) == body
+
+
 if __name__ == "__main__":
     test_pr_number_none_without_event()
     test_pr_number_reads_event_payload()
     test_main_noop_without_token()
     test_main_usage_error_without_args()
+    test_embed_images_rewrites_local_to_hosted()
+    test_embed_images_missing_file_degrades_gracefully()
+    test_embed_images_noop_without_images()
     print("OK: post_comment tests passed")
