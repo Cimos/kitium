@@ -126,7 +126,8 @@ for board in "${BOARDS[@]}"; do
   mapfile -t drc_jsons < <(find "${bdir}/out/drc" -name '*.json' 2>/dev/null | sort)
   if [ "${#drc_jsons[@]}" -eq 1 ]; then
     set +e
-    python3 "${SCRIPTS}/drc_gate.py" "${drc_jsons[0]}" --summary-out "${bdir}/drc-summary.txt"
+    python3 "${SCRIPTS}/drc_gate.py" "${drc_jsons[0]}" \
+      --summary-out "${bdir}/drc-summary.txt" --md-out "${bdir}/drc-table.md"
     drc_rc=$?
     set -e
     [ "${drc_rc}" -eq 0 ] || { warn "${name}: post-filter DRC violations present (see drc-summary.txt)"; drc_failed=1; }
@@ -143,17 +144,36 @@ for board in "${BOARDS[@]}"; do
   if [ -f "${bdir}/.source" ]; then
     bash "${SCRIPTS}/pcb_diff.sh" "${board}" "$(cat "${bdir}/.source")" "${BASE_REF}" \
       "${KIBOT_CFG}" "${bdir}/out" "${SCRIPTS}" 2>&1 | tee -a "${bdir}/kibot.log" || true
+    # Rasterize the diff PDF to PNG so reviewers can see the change without opening a
+    # PDF (poppler's pdftoppm; best-effort). Inline-embedding the PNG in the comment
+    # needs image hosting — pending a decision; for now it ships in the artifact.
+    if [ -d "${bdir}/out/diff" ]; then
+      diff_pdf_raw="$(find "${bdir}/out/diff" -name '*.pdf' 2>/dev/null | sort | head -1)"
+      if [ -n "${diff_pdf_raw}" ]; then
+        if pdftoppm -png -r 120 "${diff_pdf_raw}" "${bdir}/out/diff/${name}-diff" >/dev/null 2>&1; then
+          echo "[kitium] diff PNG(s) rendered"
+        else
+          warn "${name}: diff PDF->PNG failed (best-effort)"
+        fi
+      fi
+    fi
   fi
 
   {
     echo "## Board: \`${name}\`"
     echo
     echo "- Artifacts: \`${bdir}/out\`"
-    if [ -f "${bdir}/drc-summary.txt" ]; then
+    if [ -f "${bdir}/drc-table.md" ]; then
+      echo
+      cat "${bdir}/drc-table.md"
+      echo
+    elif [ -f "${bdir}/drc-summary.txt" ]; then
       echo "- DRC (post-filter): $(head -1 "${bdir}/drc-summary.txt")"
     fi
-    diff_pdf="$(find "${bdir}/out/diff" -name '*.pdf' 2>/dev/null | sort | head -1)"
-    [ -n "${diff_pdf}" ] && echo "- Visual diff vs PR base: \`${diff_pdf}\`"
+    if [ -d "${bdir}/out/diff" ]; then
+      diff_pdf="$(find "${bdir}/out/diff" -name '*.pdf' 2>/dev/null | sort | head -1)"
+      [ -n "${diff_pdf}" ] && echo "- Visual diff vs PR base: \`${diff_pdf}\` (PNG rendered alongside)"
+    fi
     if [ -f "${bdir}/metrics.json" ]; then
       echo "<details><summary>Metrics</summary>"
       echo
