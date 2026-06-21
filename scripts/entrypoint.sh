@@ -61,6 +61,13 @@ log "Converted ${#BOARDS[@]} board(s)."
 drc_failed=0
 preflight_failed=0
 
+# PR base revision SHA for the visual diff (empty off-PR). The consuming workflow
+# checks out with fetch-depth:0, so this commit is reachable in the runner.
+BASE_REF=""
+if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "${GITHUB_EVENT_PATH}" ]; then
+  BASE_REF="$(python3 -c "import json,os;e=json.load(open(os.environ['GITHUB_EVENT_PATH']));print((e.get('pull_request') or {}).get('base',{}).get('sha','') or '')" 2>/dev/null || true)"
+fi
+
 # --- 3+4. Per-board outputs + checks ---------------------------------------
 for board in "${BOARDS[@]}"; do
   name="$(basename "${board}" .kicad_pcb)"
@@ -119,6 +126,12 @@ for board in "${BOARDS[@]}"; do
   # Best-effort 3D render (never gates; render_board.sh always exits 0).
   bash "${SCRIPTS}/render_board.sh" "${board}" "${bdir}/out/docs/${name}-3d.png" 2>&1 | tee -a "${bdir}/kibot.log" || true
 
+  # Best-effort visual diff vs the PR base (never gates; pcb_diff.sh always exits 0).
+  if [ -f "${bdir}/.source" ]; then
+    bash "${SCRIPTS}/pcb_diff.sh" "${board}" "$(cat "${bdir}/.source")" "${BASE_REF}" \
+      "${KIBOT_CFG}" "${bdir}/out" "${SCRIPTS}" 2>&1 | tee -a "${bdir}/kibot.log" || true
+  fi
+
   {
     echo "## Board: \`${name}\`"
     echo
@@ -126,6 +139,8 @@ for board in "${BOARDS[@]}"; do
     if [ -f "${bdir}/drc-summary.txt" ]; then
       echo "- DRC (post-filter): $(head -1 "${bdir}/drc-summary.txt")"
     fi
+    diff_pdf="$(find "${bdir}/out/diff" -name '*.pdf' 2>/dev/null | sort | head -1)"
+    [ -n "${diff_pdf}" ] && echo "- Visual diff vs PR base: \`${diff_pdf}\`"
     if [ -f "${bdir}/metrics.json" ]; then
       echo "<details><summary>Metrics</summary>"
       echo

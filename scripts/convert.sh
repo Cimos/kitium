@@ -70,5 +70,9 @@ for pcb in "${pcbdocs[@]}"; do
     --report-file "${outdir}/import-report.json" \
     "${pcb}" >&2
 
+  # Record the source .PcbDoc (repo-relative, no leading ./) so entrypoint.sh can
+  # fetch the board's BASE revision from git history for the visual diff.
+  printf '%s\n' "${pcb#./}" > "${outdir}/.source"
+
   echo "${out}"   # stdout: machine-readable list consumed by entrypoint.sh
 done
