@@ -259,6 +259,9 @@ def apply_to_board(kicad_pcb, data) -> bool:
             for hole in holes:                      # subtract voids — else the pour fills solid
                 sps.AddHole(_chain(hole), idx)
                 nholes += 1
+        # KiCad's saved filled_polygons must be hole-free: fracture stitches each void into
+        # its outline with a cut slit. Without this the holes are dropped on save (solid pour).
+        sps.Fracture()
         zone.SetFilledPolysList(zone.GetLayer(), sps)
         zone.SetIsFilled(True)
         applied += 1
