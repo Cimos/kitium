@@ -2,6 +2,9 @@
 """Import Altium's ACTUAL poured copper into the converted KiCad board, instead of
 re-pouring zones with KiCad's fill engine.
 
+UNFINISHED — the imported copper does NOT yet faithfully match the published gerbers
+(notably on inner layers). See docs/altium-pour-known-issues.md before relying on it.
+
 Why: kicad-cli imports Altium zones UNFILLED, so we normally re-pour them in KiCad.
 But KiCad's fill engine makes different connectivity/island decisions than Altium
 (see docs), so the re-poured copper never byte-matches Altium. Altium, however, stores
