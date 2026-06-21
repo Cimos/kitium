@@ -101,6 +101,16 @@ def apply_to_board(kicad_pcb: str, data: dict) -> None:
         for z in b.Zones():
             z.SetMinThickness(pcbnew.FromMM(pour))
         print(f"[kitium] set zone min_thickness = {pour:.4f}mm (Altium MINPRIMLENGTH)")
+    rd = data["polygons"].get("remove_dead_copper")
+    if rd is not None:
+        try:
+            mode = (pcbnew.ISLAND_REMOVAL_MODE_ALWAYS if rd
+                    else pcbnew.ISLAND_REMOVAL_MODE_NEVER)
+            for z in b.Zones():
+                z.SetIslandRemovalMode(mode)
+            print(f"[kitium] set island removal = {'ALWAYS' if rd else 'NEVER'} (Altium REMOVEDEAD)")
+        except Exception:  # noqa: BLE001 — island-removal API varies by KiCad version
+            pass
     clr = data["rules"].get("min_clearance_mm")
     if clr:
         b.GetDesignSettings().m_MinClearance = pcbnew.FromMM(clr)
