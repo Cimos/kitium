@@ -30,6 +30,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import math
 import re
 import struct
 import sys
@@ -94,17 +95,26 @@ def _records(data):
 
 
 def _read_doubles_contour(geo, off):
-    """[uint32 n][n × (double x, double y)] in 1/10000 mil. Returns (pts, next_off)."""
+    """[uint32 n][n × (double x, double y)] in 1/10000 mil. Returns (pts, next_off).
+
+    Advances next_off past the full claimed count even on bad data, so later contours stay
+    aligned. Returns [] (drop the contour) if any vertex is non-finite or absurdly large —
+    a corruption guard so a malformed hole can never inject garbage copper geometry."""
     n = struct.unpack_from("<I", geo, off)[0]
     off += 4
-    pts = []
+    pts, bad = [], False
     for _ in range(n):
         if off + 16 > len(geo):
+            bad = True
             break
         x, y = struct.unpack_from("<dd", geo, off)
-        pts.append((x * RAW_TO_MM, y * RAW_TO_MM))
         off += 16
-    return pts, off
+        xm, ym = x * RAW_TO_MM, y * RAW_TO_MM
+        if not (math.isfinite(xm) and math.isfinite(ym)) or abs(xm) > 1e5 or abs(ym) > 1e5:
+            bad = True
+            continue
+        pts.append((xm, ym))
+    return ([] if bad else pts), off
 
 
 def _shape_record(geo, hole_count):

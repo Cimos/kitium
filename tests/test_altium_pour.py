@@ -72,6 +72,16 @@ def test_shape_record_subtracts_hole():
     assert abs(holes[0][0][0] - 10.0 * 0.0254) < 1e-6
 
 
+def test_hole_corruption_guard():
+    # a void with an absurd coordinate is dropped, not turned into garbage copper
+    geo = _shape_geo([(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)])
+    geo += struct.pack("<I", 3) + struct.pack("<dd", 1e12, 1e12) \
+        + struct.pack("<dd", 2e12, 1e12) + struct.pack("<dd", 2e12, 2e12)
+    outer, holes, _ = ap._shape_record(geo, 1)
+    assert len(outer) == 3
+    assert holes == []          # corrupt hole discarded
+
+
 def test_region_record_doubles():
     geo = struct.pack("<I", 2) + struct.pack("<dd", 27500000.0, 10050000.0) \
         + struct.pack("<dd", 31000000.0, 10050000.0)
