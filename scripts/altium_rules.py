@@ -128,13 +128,17 @@ def apply_to_board(kicad_pcb: str, data: dict) -> None:
             pass
     clr = data["rules"].get("min_clearance_mm")
     if clr:
-        b.GetDesignSettings().m_MinClearance = pcbnew.FromMM(clr)
-        try:
-            for nc in b.GetAllNetClasses().values():
-                nc.SetClearance(pcbnew.FromMM(clr))
-        except Exception:  # noqa: BLE001 — netclass API varies by KiCad version
-            pass
-        print(f"[kitium] set min clearance = {clr:.4f}mm (Altium Clearance GAP)")
+        # Set each ZONE's LOCAL clearance (the pour-to-other-net gap). Do NOT touch
+        # board m_MinClearance — it's an absolute floor that can't be reduced and would
+        # inflate every gap. The importer leaves some zones at KiCad's 0.5mm default;
+        # this brings them down to Altium's clearance.
+        n = 0
+        for z in b.Zones():
+            try:
+                z.SetLocalClearance(pcbnew.FromMM(clr)); n += 1
+            except Exception:  # noqa: BLE001 — zone-clearance setter name varies by KiCad version
+                pass
+        print(f"[kitium] set local clearance on {n} zone(s) = {clr:.4f}mm (Altium Clearance GAP)")
     pcbnew.SaveBoard(kicad_pcb, b)
 
 
