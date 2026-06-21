@@ -139,6 +139,20 @@ def apply_to_board(kicad_pcb: str, data: dict) -> None:
             except Exception:  # noqa: BLE001 — zone-clearance setter name varies by KiCad version
                 pass
         print(f"[kitium] set local clearance on {n} zone(s) = {clr:.4f}mm (Altium Clearance GAP)")
+        # KiCad resolves a zone's fill clearance as MAX(zone-local, netclass, board-min),
+        # so a zone-local value is silently overridden whenever the netclass clearance is
+        # larger. The importer leaves netclasses at KiCad's 0.2mm default, which beats
+        # Altium's 0.19mm and over-pulls the pour by ~0.01mm around every different-net
+        # object. Pin the netclasses to the same GAP so the MAX resolves to Altium's value
+        # (this also aligns track-to-track clearance, which Altium's single rule governs).
+        try:
+            ncs = b.GetAllNetClasses()
+            m = 0
+            for name in ncs:
+                ncs[name].SetClearance(pcbnew.FromMM(clr)); m += 1
+            print(f"[kitium] set netclass clearance on {m} class(es) = {clr:.4f}mm (Altium Clearance GAP)")
+        except Exception:  # noqa: BLE001 — netclass accessor varies by KiCad version
+            pass
         # Copper-to-board-edge is a SEPARATE KiCad constraint (m_CopperEdgeClearance) that
         # the importer leaves at KiCad's ~0.5mm default, pulling the pour well off the edge.
         # Altium folds edge clearance into the same Clearance rule (no board-outline rule
