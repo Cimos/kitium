@@ -139,6 +139,19 @@ def apply_to_board(kicad_pcb: str, data: dict) -> None:
             except Exception:  # noqa: BLE001 — zone-clearance setter name varies by KiCad version
                 pass
         print(f"[kitium] set local clearance on {n} zone(s) = {clr:.4f}mm (Altium Clearance GAP)")
+        # Copper-to-board-edge is a SEPARATE KiCad constraint (m_CopperEdgeClearance) that
+        # the importer leaves at KiCad's ~0.5mm default, pulling the pour well off the edge.
+        # Altium folds edge clearance into the same Clearance rule (no board-outline rule
+        # here), so drive the edge constraint from the same GAP to match Altium's pour edge.
+        try:
+            bds = b.GetDesignSettings()
+            try:
+                bds.SetCopperEdgeClearance(pcbnew.FromMM(clr))
+            except AttributeError:  # older pcbnew exposes the field, not a setter
+                bds.m_CopperEdgeClearance = pcbnew.FromMM(clr)
+            print(f"[kitium] set copper-to-edge clearance = {clr:.4f}mm (Altium Clearance GAP)")
+        except Exception:  # noqa: BLE001 — edge-clearance API varies by KiCad version
+            pass
     pcbnew.SaveBoard(kicad_pcb, b)
 
 
