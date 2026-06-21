@@ -122,6 +122,12 @@ def _verts_region(geo):
     return pts, False
 
 
+def _is_copper_layer(name) -> bool:
+    """True for Altium copper layers (TOP/BOTTOM/MIDn/PLANEn); False for paste/silk/mask."""
+    n = (name or "").upper()
+    return n in ("TOP", "BOTTOM") or bool(re.fullmatch(r"(?:MID|PLANE|INTERNALPLANE)\d+", n))
+
+
 def parse_regions(ole) -> dict:
     """Poured-copper regions grouped by parent polygon index. Prefers ShapeBasedRegions6.
 
@@ -142,13 +148,16 @@ def parse_regions(ole) -> dict:
             d = dict(re.findall(r"([A-Z0-9_]+)=([^|]*)", prop))
             if d.get("KIND") not in (None, "0"):   # 0 = copper; skip cavities/cutouts
                 continue
+            layer = d.get("V7_LAYER", "")
+            if not _is_copper_layer(layer):         # skip paste/overlay/soldermask regions
+                continue
             geo = body[22 + proplen:]
             if len(geo) < 4:
                 continue
             pts, arc = decode(geo)
             had_arc = had_arc or arc
             if len(pts) >= 3:
-                g = groups.setdefault(poly_idx, {"layer": d.get("V7_LAYER", ""), "polys": []})
+                g = groups.setdefault(poly_idx, {"layer": layer, "polys": []})
                 g["polys"].append(pts)
         if groups:
             return {"groups": groups, "had_arc": had_arc, "source": stream}
